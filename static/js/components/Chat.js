@@ -89,14 +89,14 @@ export function ChatComponent(container) {
   function renderMessage(message) {
     const { role, content, timestamp } = message;
     const isUser = role === 'user';
-    
+
     return `
       <div class="chat-message ${isUser ? 'user' : 'assistant'}" role="article">
         <div class="chat-message-header">
           <span class="chat-message-role">${isUser ? 'Вы' : 'Qwen'}</span>
           <span class="chat-message-time">${formatTime(timestamp)}</span>
         </div>
-        <div class="chat-message-content">${escapeHtml(content)}</div>
+        <div class="chat-message-content" style="white-space:pre-wrap">${escapeHtml(content)}</div>
       </div>
     `;
   }

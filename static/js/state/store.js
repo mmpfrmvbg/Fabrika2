@@ -405,8 +405,15 @@ export const store = {
               console.log(`[Chat] Reconnect attempt ${reconnectAttempts}/${maxReconnects}`);
               setTimeout(connectSSE, 1000 * reconnectAttempts);
             } else {
+              // Заменить пустое сообщение ассистента на текст ошибки
+              const msgs = this.state.chat.messages;
+              const updatedMsgs = msgs.map((m, i) =>
+                i === msgs.length - 1 && m.role === 'assistant' && !m.content
+                  ? { ...m, content: `⚠️ Ошибка соединения с Qwen. Проверьте что сервер запущен.` }
+                  : m
+              );
               this.update({
-                chat: { ...this.state.chat, isLoading: false, streamCleanup: null },
+                chat: { ...this.state.chat, isLoading: false, streamCleanup: null, messages: updatedMsgs },
                 _streamChunk: null
               });
               console.error('[Chat] Connection lost after retries:', error);
@@ -421,8 +428,18 @@ export const store = {
 
     } catch (error) {
       console.error('[Chat] Failed to send message:', error);
+      // Добавить сообщение об ошибке вместо пустого ответа
+      const errorMessage = {
+        role: 'assistant',
+        content: `⚠️ Не удалось отправить сообщение: ${error.message}`,
+        timestamp: new Date().toISOString()
+      };
       this.update({
-        chat: { ...this.state.chat, isLoading: false },
+        chat: {
+          ...this.state.chat,
+          isLoading: false,
+          messages: [...this.state.chat.messages, errorMessage]
+        },
         _streamChunk: null
       });
     }
