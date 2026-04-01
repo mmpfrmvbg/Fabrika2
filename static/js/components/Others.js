@@ -25,7 +25,7 @@ export function AgentsComponent(container) {
     if (!container) return;
 
     // Нормализуем - agents может быть в обёртке { agents: [...] }
-    const agentsArray = agents?.agents || Array.isArray(agents) ? agents : [];
+    const agentsArray = agents?.agents ?? (Array.isArray(agents) ? agents : []);
 
     container.innerHTML = `
       <div class="page-header" style="margin-bottom:var(--space-4)">
@@ -86,8 +86,8 @@ export function ImprovementsComponent(container) {
     if (!container) return;
 
     // Нормализуем - improvements возвращает {candidates: [...], stats: {...}}
-    const improvementsArray = improvements?.candidates || improvements?.items || Array.isArray(improvements) ? improvements : [];
-    const stats = improvements?.stats || {};
+    const improvementsArray = improvements?.candidates ?? improvements?.items ?? (Array.isArray(improvements) ? improvements : []);
+    const stats = improvements?.stats ?? {};
 
     const kpiContainer = document.getElementById('improvements-kpi-row');
     const tableBody = document.getElementById('tbl-improvements-body');
@@ -226,7 +226,7 @@ export function JudgementsComponent(container) {
   
   function render(judgements) {
     // Нормализуем - judgements может быть в обёртке { items: [...] } или массивом
-    const judgementsArray = judgements?.items || Array.isArray(judgements) ? judgements : [];
+    const judgementsArray = judgements?.items ?? (Array.isArray(judgements) ? judgements : []);
 
     container.innerHTML = `
       <div class="page-header" style="margin-bottom:var(--space-4)">
