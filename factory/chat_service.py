@@ -108,41 +108,48 @@ class ChatService:
     ) -> None:
         """
         Запустить Qwen CLI в чат-режиме с callback для стриминга.
-        ВАЖНО: Создаём НОВОЕ соединение для этого worker thread.
+        Использует прямой subprocess вызов qwen CLI.
         """
-        thread_conn = None
+        import subprocess
+        import shutil
+        
+        full_prompt = self._build_chat_prompt(
+            session['prompt'],
+            session['context']
+        )
+        
+        # Найти команду qwen
+        qwen_cmd = shutil.which('qwen') or shutil.which('qwen-code')
+        if not qwen_cmd:
+            raise RuntimeError('qwen команда не найдена в PATH')
+        
         try:
-            # Создаём отдельное соединение для этого потока
-            thread_conn = get_connection(self.db_path)
-            thread_logger = FactoryLogger(thread_conn)
+            result = subprocess.run(
+                [qwen_cmd, '-p', full_prompt, '--no-interactive', '--output-format', 'text'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                timeout=120
+            )
             
-            full_prompt = self._build_chat_prompt(
-                session['prompt'],
-                session['context']
-            )
-
-            result = run_qwen_cli(
-                conn=thread_conn,
-                account_manager=self.account_manager,
-                logger=thread_logger,
-                work_item_id=session['context'].get('work_item_id', ''),
-                title='Chat with Qwen',
-                description=full_prompt,
-                cwd=str(session.get('workspace'))
-            )
-
-            if result.ok:
-                chunks = result.stdout.split('\n')
-                for chunk in chunks:
-                    if chunk.strip():
-                        on_chunk(chunk + '\n')
-                        session['response'] += chunk + '\n'
+            output = result.stdout.strip()
+            
+            if not output and result.stderr:
+                # Попробовать stderr (некоторые версии пишут туда)
+                output = result.stderr.strip()
+            
+            if output:
+                # Стримить по строкам
+                for line in output.split('\n'):
+                    if line.strip():
+                        on_chunk(line + '\n')
+                        session['response'] += line + '\n'
+                session['status'] = 'done'
             else:
-                raise RuntimeError(result.error_message or 'Qwen CLI failed')
-        finally:
-            # Закрываем соединение этого потока
-            if thread_conn:
-                thread_conn.close()
+                raise RuntimeError(f'Qwen вернул пустой ответ. returncode={result.returncode}')
+                
+        except subprocess.TimeoutExpired:
+            raise RuntimeError('Qwen не ответил за 120 секунд')
     
     def _build_chat_prompt(self, user_prompt: str, context: dict) -> str:
         """
