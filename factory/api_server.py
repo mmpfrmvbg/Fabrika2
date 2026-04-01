@@ -1281,13 +1281,13 @@ def agents_list_compat() -> dict[str, Any]:
 
 @app.get("/api/failure-clusters")
 def failure_clusters() -> dict[str, Any]:
-    return {"clusters": []}
+    return {"clusters": [], "items": []}
 
 
 @app.get("/api/failures")
 def failures() -> dict[str, Any]:
     """Alias for /api/failure-clusters for frontend compatibility."""
-    return {"items": []}
+    return {"clusters": [], "items": []}
 
 
 @app.get("/api/hr")
