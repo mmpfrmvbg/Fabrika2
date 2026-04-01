@@ -110,36 +110,39 @@ class ChatService:
         Запустить Qwen CLI в чат-режиме с callback для стриминга.
         ВАЖНО: Создаём НОВОЕ соединение для этого worker thread.
         """
-        # Создаём отдельное соединение для этого потока
-        thread_conn = get_connection(self.db_path)
-        thread_logger = FactoryLogger(thread_conn)
-        
-        full_prompt = self._build_chat_prompt(
-            session['prompt'],
-            session['context']
-        )
+        thread_conn = None
+        try:
+            # Создаём отдельное соединение для этого потока
+            thread_conn = get_connection(self.db_path)
+            thread_logger = FactoryLogger(thread_conn)
+            
+            full_prompt = self._build_chat_prompt(
+                session['prompt'],
+                session['context']
+            )
 
-        result = run_qwen_cli(
-            conn=thread_conn,
-            account_manager=self.account_manager,
-            logger=thread_logger,
-            work_item_id=session['context'].get('work_item_id', ''),
-            title='Chat with Qwen',
-            description=full_prompt,
-            cwd=str(session.get('workspace'))
-        )
+            result = run_qwen_cli(
+                conn=thread_conn,
+                account_manager=self.account_manager,
+                logger=thread_logger,
+                work_item_id=session['context'].get('work_item_id', ''),
+                title='Chat with Qwen',
+                description=full_prompt,
+                cwd=str(session.get('workspace'))
+            )
 
-        if result.ok:
-            chunks = result.stdout.split('\n')
-            for chunk in chunks:
-                if chunk.strip():
-                    on_chunk(chunk + '\n')
-                    session['response'] += chunk + '\n'
-        else:
-            raise RuntimeError(result.error_message or 'Qwen CLI failed')
+            if result.ok:
+                chunks = result.stdout.split('\n')
+                for chunk in chunks:
+                    if chunk.strip():
+                        on_chunk(chunk + '\n')
+                        session['response'] += chunk + '\n'
+            else:
+                raise RuntimeError(result.error_message or 'Qwen CLI failed')
         finally:
             # Закрываем соединение этого потока
-            thread_conn.close()
+            if thread_conn:
+                thread_conn.close()
     
     def _build_chat_prompt(self, user_prompt: str, context: dict) -> str:
         """
