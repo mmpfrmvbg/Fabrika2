@@ -1,0 +1,448 @@
+"""Подключение к SQLite, транзакции, первичная инициализация."""
+from __future__ import annotations
+
+import os
+import sqlite3
+import time
+import uuid
+from contextlib import contextmanager
+from pathlib import Path
+
+from .config import ACCOUNTS, DB_PATH
+from .models import Role
+from .schema_ddl import DDL, V_API_USAGE_TODAY_RECREATE
+
+# Последняя миграция: 1=базовый DDL, 2=improvement_candidates, 3=file_changes.intent_override, 4=fsm creator_cancelled/archive_sweep
+_SCHEMA_VERSION = 4
+
+# Migration v2: self-improvement candidates (idempotent CREATE TABLE IF NOT EXISTS)
+IMPROVEMENT_CANDIDATES_DDL = """
+CREATE TABLE IF NOT EXISTS improvement_candidates (
+    id            TEXT PRIMARY KEY,
+    source_type   TEXT NOT NULL CHECK (source_type IN (
+        'failure_cluster','review_pattern','judge_pattern',
+        'metric_anomaly','hr_proposal','retry_hotspot',
+        'manual'
+    )),
+    source_ref    TEXT,
+    title         TEXT NOT NULL,
+    description   TEXT NOT NULL,
+    evidence      TEXT NOT NULL,
+    fix_target    TEXT NOT NULL CHECK (fix_target IN (
+        'code','prompt','policy','infra','process'
+    )),
+    affected_role TEXT,
+    affected_files TEXT,
+    frequency     INTEGER NOT NULL DEFAULT 1,
+    severity_score REAL NOT NULL DEFAULT 0.5,
+    impact_score  REAL NOT NULL DEFAULT 0.5,
+    confidence    REAL NOT NULL DEFAULT 0.5,
+    priority_score REAL GENERATED ALWAYS AS (
+        severity_score * 0.4 + impact_score * 0.3 + confidence * 0.2
+        + MIN(frequency / 10.0, 1.0) * 0.1
+    ) STORED,
+    status        TEXT NOT NULL DEFAULT 'proposed' CHECK (status IN (
+        'proposed','approved','rejected','converted','expired'
+    )),
+    risk_level    TEXT NOT NULL DEFAULT 'low' CHECK (risk_level IN (
+        'low','medium','high'
+    )),
+    vision_id     TEXT REFERENCES work_items(id),
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now')),
+    reviewed_at   TEXT,
+    reviewed_by   TEXT,
+    expires_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ic_status ON improvement_candidates(status, priority_score DESC);
+CREATE INDEX IF NOT EXISTS idx_ic_source ON improvement_candidates(source_type);
+"""
+
+
+def _db_path_from_conn(conn: sqlite3.Connection) -> Path | None:
+    """Путь к файлу БД для `main` (для делегирования ensure_schema из legacy-вызовов)."""
+    for _seq, name, path in conn.execute("PRAGMA database_list").fetchall():
+        if name == "main" and path:
+            return Path(path)
+    return None
+
+
+def ensure_improvement_candidates_schema(conn: sqlite3.Connection) -> None:
+    """
+    Раньше выполнял DDL на каждом init_db. Сейчас схема поднимается только в ensure_schema.
+
+    Оставлено для совместимости: при необходимости вызывает ensure_schema по пути соединения.
+    """
+    p = _db_path_from_conn(conn)
+    if p is not None:
+        ensure_schema(p)
+
+
+def _file_changes_columns(conn: sqlite3.Connection) -> set[str]:
+    return {r[1] for r in conn.execute("PRAGMA table_info(file_changes)").fetchall()}
+
+
+def _migration_file_changes_intent_override(conn: sqlite3.Connection) -> None:
+    cols = _file_changes_columns(conn)
+    if "intent_override" not in cols:
+        conn.execute("ALTER TABLE file_changes ADD COLUMN intent_override TEXT")
+
+
+def _migration_fsm_creator_archive_api(conn: sqlite3.Connection) -> None:
+    """FSM: creator_cancelled и archive_sweep для API управления (INSERT OR IGNORE)."""
+    conn.executescript(
+        """
+        INSERT OR IGNORE INTO state_transitions VALUES
+            ('st_creator_cancel','work_item','*','creator_cancelled','cancelled',
+             'guard_cancellable_for_creator','action_creator_cancelled_cleanup',NULL,
+             'Создатель отменил задачу (creator_cancelled)'),
+            ('st_archive_sweep','work_item','done','archive_sweep','archived',
+             'guard_work_item_done','action_archive_finalize',NULL,
+             'Архив завершённой задачи (archive_sweep)');
+        """
+    )
+
+
+def _max_migration_version(conn: sqlite3.Connection) -> int:
+    try:
+        row = conn.execute("SELECT MAX(version) FROM migrations").fetchone()
+        return int(row[0] or 0)
+    except sqlite3.OperationalError:
+        return 0
+
+
+def _api_accounts_column_names(conn) -> set[str]:
+    return {r[1] for r in conn.execute("PRAGMA table_info(api_accounts)").fetchall()}
+
+
+@contextmanager
+def _advisory_file_lock(path: Path, *, timeout_sec: float = 60.0, poll_sec: float = 0.05):
+    """
+    Advisory межпроцессный lock через отдельный файл.
+    Нужен, чтобы не выполнять DDL/migrations конкурентно (SQLite executescript берёт exclusive lock).
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(path, "a+b")  # noqa: SIM115
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            start = time.time()
+            while True:
+                try:
+                    fh.seek(0)
+                    fh.write(b"\0")
+                    fh.flush()
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    if time.time() - start >= timeout_sec:
+                        raise TimeoutError(f"Timeout acquiring migrate lock: {path}")
+                    time.sleep(poll_sec)
+        else:
+            import fcntl
+
+            start = time.time()
+            while True:
+                try:
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.time() - start >= timeout_sec:
+                        raise TimeoutError(f"Timeout acquiring migrate lock: {path}")
+                    time.sleep(poll_sec)
+
+        yield
+    finally:
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                fh.seek(0)
+                try:
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                except PermissionError:
+                    # On some Windows setups, unlocking may raise if the region is already unlocked.
+                    pass
+            else:
+                import fcntl
+
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        finally:
+            try:
+                fh.close()
+            except Exception:
+                pass
+
+
+def ensure_schema(db_path: Path = DB_PATH) -> None:
+    """
+    Гарантирует наличие схемы (idempotent).
+
+    DDL/migrations выполняются только под advisory lock
+    `{db_path}.migrate.lock`, чтобы параллельные процессы не ловили `database is locked`.
+    """
+    db_path = Path(db_path)
+
+    # Быстрый чек без lock: если все миграции применены — выходим (без DDL).
+    try:
+        conn0 = sqlite3.connect(str(db_path), timeout=30.0)
+        try:
+            conn0.execute("PRAGMA busy_timeout = 15000")
+            if _max_migration_version(conn0) >= _SCHEMA_VERSION:
+                return
+        finally:
+            conn0.close()
+    except sqlite3.OperationalError:
+        pass
+
+    lock_path = Path(str(db_path) + ".migrate.lock")
+    with _advisory_file_lock(lock_path):
+        conn = sqlite3.connect(str(db_path), timeout=30.0)
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("PRAGMA busy_timeout = 15000")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS migrations (
+                    version     INTEGER PRIMARY KEY,
+                    name        TEXT NOT NULL,
+                    applied_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now'))
+                )
+                """
+            )
+            mv = _max_migration_version(conn)
+            if mv < 1:
+                conn.executescript(DDL)
+                migrate_schema(conn)
+                conn.execute(
+                    "INSERT OR IGNORE INTO migrations(version, name) VALUES (1, 'factory_schema_v1')"
+                )
+                mv = _max_migration_version(conn)
+
+            if mv < 2:
+                conn.executescript(IMPROVEMENT_CANDIDATES_DDL)
+                conn.execute(
+                    "INSERT OR IGNORE INTO migrations(version, name) VALUES (2, 'improvement_candidates')"
+                )
+                mv = _max_migration_version(conn)
+
+            if mv < 3:
+                _migration_file_changes_intent_override(conn)
+                conn.execute(
+                    "INSERT OR IGNORE INTO migrations(version, name) VALUES (3, 'file_changes_intent_override')"
+                )
+                mv = _max_migration_version(conn)
+
+            if mv < 4:
+                _migration_fsm_creator_archive_api(conn)
+                conn.execute(
+                    "INSERT OR IGNORE INTO migrations(version, name) VALUES (4, 'fsm_creator_cancelled_archive_sweep')"
+                )
+
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def migrate_schema(conn) -> None:
+    """Добавляет колонки к существующей api_accounts и пересоздаёт v_api_usage_today."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS architect_comments (
+            id              TEXT PRIMARY KEY,
+            work_item_id    TEXT NOT NULL REFERENCES work_items(id),
+            comment         TEXT NOT NULL,
+            created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now'))
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_architect_comments_wi "
+        "ON architect_comments(work_item_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_architect_comments_time "
+        "ON architect_comments(work_item_id, created_at DESC)"
+    )
+    cols = _api_accounts_column_names(conn)
+    alters: list[tuple[str, str]] = [
+        ("account_status", "TEXT NOT NULL DEFAULT 'active'"),
+        ("last_error", "TEXT"),
+        ("cooldown_until", "TEXT"),
+        ("last_used_at", "TEXT"),
+    ]
+    for name, typedef in alters:
+        if name not in cols:
+            conn.execute(f"ALTER TABLE api_accounts ADD COLUMN {name} {typedef}")
+    conn.execute(
+        "UPDATE api_accounts SET provider = 'qwen_code_cli' "
+        "WHERE provider IN ('anthropic', '') OR provider IS NULL"
+    )
+    conn.executescript(V_API_USAGE_TODAY_RECREATE)
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS judge_verdicts (
+            id                      TEXT PRIMARY KEY,
+            run_id                  TEXT NOT NULL REFERENCES runs(id),
+            work_item_id            TEXT NOT NULL REFERENCES work_items(id),
+            item                    TEXT NOT NULL,
+            verdict                 TEXT NOT NULL,
+            all_passed              INTEGER NOT NULL,
+            next_event              TEXT NOT NULL,
+            rejection_reason_code   TEXT,
+            checked_guards_json     TEXT NOT NULL DEFAULT '[]',
+            failed_guards_json      TEXT,
+            context_refs_json       TEXT NOT NULL DEFAULT '[]',
+            suggested_action        TEXT,
+            payload_json            TEXT NOT NULL,
+            created_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_jv_wi ON judge_verdicts(work_item_id);
+        CREATE INDEX IF NOT EXISTS idx_jv_verdict ON judge_verdicts(verdict);
+        CREATE INDEX IF NOT EXISTS idx_jv_reason ON judge_verdicts(rejection_reason_code);
+        CREATE INDEX IF NOT EXISTS idx_jv_created ON judge_verdicts(created_at);
+        CREATE TABLE IF NOT EXISTS review_results (
+            id                  TEXT PRIMARY KEY,
+            reviewer_run_id     TEXT NOT NULL REFERENCES runs(id),
+            work_item_id        TEXT NOT NULL REFERENCES work_items(id),
+            subject_run_id      TEXT NOT NULL,
+            item                TEXT NOT NULL,
+            verdict             TEXT NOT NULL,
+            all_passed          INTEGER NOT NULL,
+            next_event          TEXT NOT NULL,
+            issues_json         TEXT NOT NULL,
+            context_refs_json   TEXT NOT NULL,
+            payload_json        TEXT NOT NULL,
+            created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_rr_wi ON review_results(work_item_id);
+        CREATE INDEX IF NOT EXISTS idx_rr_verdict ON review_results(verdict);
+        CREATE INDEX IF NOT EXISTS idx_rr_subject ON review_results(subject_run_id);
+        CREATE INDEX IF NOT EXISTS idx_rr_created ON review_results(created_at);
+        """
+    )
+
+    # FSM transitions may evolve; keep key rules in sync for autonomous pipeline.
+    # Use INSERT OR REPLACE so existing DBs get the updated behavior.
+    conn.executescript(
+        """
+        INSERT OR REPLACE INTO state_transitions VALUES
+            ('st_05','work_item','ready_for_judge','judge_approved','ready_for_work',
+             'guard_ready_for_forge','action_enqueue_forge','["atom","atm_change"]',
+             'Судья одобрил атом — в кузницу (нужны файлы и отсутствует успешный forge)'),
+
+            ('st_14','work_item','in_review','review_passed','ready_for_judge',
+             'guard_all_checks_passed','action_notify_judge','["atom","atm_change"]',
+             'Ревью пройдено — к судье на финальное решение'),
+
+            ('st_18','work_item','ready_for_judge','judge_approved','done',
+             'guard_has_review_approval','action_commit_to_git','["atom","atm_change"]',
+             'Судья одобрил после ревью — завершение + готовность к коммиту'),
+
+            ('st_07b','work_item','ready_for_judge','judge_rejected','ready_for_work',
+             'guard_has_review_approval','action_enqueue_forge','["atom","atm_change"]',
+             'Судья отклонил после ревью — вернуть в кузницу с фидбэком (retry)'),
+
+            ('st_07c','work_item','ready_for_judge','judge_rejected','ready_for_work',
+             'guard_has_file_changes','action_enqueue_forge','["atom","atm_change"]',
+             'Судья отклонил после форжа (есть file_changes) — вернуть в кузницу (retry)'),
+
+            ('st_40','work_item','*','parent_complete','done',
+             'guard_all_children_done','action_propagate_completion',NULL,
+             'Все дети завершены — автозавершение родителя (рекурсивный rollup)');
+        """
+    )
+    conn.commit()
+
+
+def gen_id(prefix: str = "") -> str:
+    short = uuid.uuid4().hex[:12]
+    return f"{prefix}_{short}" if prefix else short
+
+
+def get_connection(db_path: Path | str = DB_PATH, *, read_only: bool = False) -> sqlite3.Connection:
+    """Лёгкое подключение: только PRAGMA, без DDL (схема — через ensure_schema).
+
+    ``read_only=True`` — URI ``?mode=ro`` (для API read-path); ``foreign_keys`` включены для единообразия.
+    """
+    p = Path(db_path).resolve()
+    if read_only:
+        if not p.exists():
+            raise FileNotFoundError(str(p))
+        uri = p.as_uri() + "?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, timeout=30.0)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 15000")
+        conn.execute("PRAGMA query_only = ON")
+        return conn
+
+    conn = sqlite3.connect(str(p), timeout=30)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 15000")
+    conn.execute("PRAGMA wal_autocheckpoint = 100")
+    return conn
+
+
+@contextmanager
+def transaction(conn: sqlite3.Connection):
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def _seed_static_data(conn: sqlite3.Connection) -> None:
+    for i, acc in enumerate(ACCOUNTS):
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO api_accounts (id, name, api_key, daily_limit, priority, provider)
+            VALUES (?, ?, ?, ?, ?, 'qwen_code_cli')
+            """,
+            (acc["id"], acc["name"], acc["api_key"], acc["daily_limit"], i),
+        )
+
+    default_agents = [
+        (Role.ORCHESTRATOR, "orchestrator"),
+        (Role.PLANNER, "planner"),
+        (Role.ARCHITECT, "architect"),
+        (Role.JUDGE, "judge"),
+        (Role.REVIEWER, "reviewer"),
+        (Role.FORGE, "forge"),
+        (Role.HR, "hr"),
+    ]
+    for role, name in default_agents:
+        agent_id = f"agent_{name}"
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO agents (id, role, active)
+            VALUES (?, ?, 1)
+            """,
+            (agent_id, role.value),
+        )
+
+    initial_state = {
+        "factory_status": "idle",
+        "active_account_id": ACCOUNTS[0]["id"],
+        "orchestrator_version": "0.1.0",
+        "last_poll_at": "",
+    }
+    for k, v in initial_state.items():
+        conn.execute(
+            "INSERT OR IGNORE INTO system_state (key, value) VALUES (?, ?)",
+            (k, v),
+        )
+
+    conn.commit()
+
+
+def init_db(db_path: Path = DB_PATH) -> sqlite3.Connection:
+    ensure_schema(db_path)
+    conn = get_connection(db_path)
+    _seed_static_data(conn)
+    return conn

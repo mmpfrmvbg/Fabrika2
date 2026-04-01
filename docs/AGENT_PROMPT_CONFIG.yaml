@@ -1,0 +1,55 @@
+# Конфиг system-контекста для LLM-агентов Fabrika 2.0 (песочница proekt/).
+# Сборка промпта: meta_header + выдержки из contract_file по section_ids для роли.
+# Путь к контракту — относительно каталога docs/ (рядом с этим файлом).
+
+version: 1
+contract_file: PHASE2_AGENT_CONTRACT.md
+
+meta_header: |
+  Ты — агент фабрики кода Fabrika 2.0. Ниже — выдержки из контракта (§) и ссылка на код.
+  Правило разрешения конфликтов: если заметишь расхождение между текстом контракта и
+  реализацией в репозитории (`Fabrika2.0/proekt/factory/`), **приоритет у кода**. Зафиксируй
+  расхождение: номер § в PHASE2_AGENT_CONTRACT.md и файл/функцию в коде, где фактическое
+  поведение отличается. Не выдумывай переходы FSM — сверяйся с `schema_ddl.py` и `fsm.py`.
+
+roles:
+  planner:
+    factory_module: factory/agents/planner.py
+    section_ids:
+      - "2"   # Планировщик и work_item_files
+      - "4"   # planner_decomposed → action_notify_architect
+      - "6"   # транзакции / контекст прогона
+
+  architect:
+    factory_module: factory/agents/architect.py
+    section_ids:
+      - "4"   # architect_submitted vs action_notify_architect
+      - "6"
+
+  judge:
+    factory_module: factory/agents/judge.py
+    section_ids:
+      - "1"   # judge_approved vs judge_approved_for_planning
+      - "4"
+      - "8"   # JudgeVerdict STRICT JSON, guards, next_event
+
+  reviewer:
+    factory_module: factory/agents/reviewer.py
+    section_ids:
+      - "3"   # review_failed; sent_to_judge — оркестратор
+      - "6"
+      - "9"   # ReviewResult STRICT JSON, review_passed / review_failed
+
+  forge:
+    factory_module: factory/actions.py
+    section_ids:
+      - "6"   # action_start_forge_run, порядок runs / file_locks
+      - "7"   # QWEN-CODE-CLI: песочница, stdin, file_changes
+      - "E2E"
+
+  orchestrator:
+    factory_module: factory/orchestrator_core.py
+    section_ids:
+      - "3"   # _escalate_review_rejected_to_judge
+      - "5"   # dev БД
+      - "E2E"

@@ -1,0 +1,5 @@
+# Fabrika2.0 proekt — зависимости Python (factory/)
+pydantic>=2.0,<3
+fastapi>=0.115.0,<1
+uvicorn[standard]>=0.30.0,<1
+httpx>=0.27.0,<1
