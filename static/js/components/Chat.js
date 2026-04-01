@@ -24,7 +24,12 @@ export function ChatComponent(container) {
         scrollToBottom();
         return;
       }
-      
+
+      // Ре-рендер ТОЛЬКО если изменился chat state
+      // (игнорируем полинг journal/orchestrator/workers)
+      const chatChanged = 'chat' in changes || changes._forceRender;
+      if (!chatChanged) return;
+
       // Полный re-render для структурных изменений
       if (state.chat.isOpen) {
         container.classList.add('open');

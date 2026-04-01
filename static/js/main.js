@@ -99,10 +99,10 @@ async function loadInitialData() {
 // ═══════════════════════════════════════════════════════
 
 function renderAll() {
-  store.update({ _refreshTrigger: Date.now() });
   renderKPIs();
   renderDashboardJournal();
   updateNavBadges();
+  updateHeaderStatus();
 }
 
 function renderKPIs() {
@@ -138,6 +138,25 @@ function updateNavBadges() {
   if (badgeLog && journal?.items?.length) badgeLog.textContent = Math.min(journal.items.length, 99);
   const badgeForge = document.getElementById('badge-forge');
   if (badgeForge && workersStatus?.workers) badgeForge.textContent = workersStatus.workers.length;
+}
+
+function updateHeaderStatus() {
+  const { orchestrator, workersStatus, apiConnected } = store.state;
+  // Статус оркестратора в хедере
+  const orchStatus = document.getElementById('orch-status-text');
+  if (orchStatus) {
+    orchStatus.textContent = orchestrator?.running ? 'Running' : '—';
+  }
+  // Статус соединения
+  const connDot = document.querySelector('.status-dot');
+  if (connDot) {
+    connDot.className = 'status-dot ' + (apiConnected ? 'online' : 'offline');
+  }
+  // Счётчик активных агентов
+  const agentsCount = document.getElementById('agents-active-count');
+  if (agentsCount && workersStatus?.workers) {
+    agentsCount.textContent = workersStatus.workers.length + ' агентов активны';
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -389,7 +408,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(async () => {
     try {
       await Promise.all([store.loadJournal(), store.loadOrchestratorStatus(), store.loadWorkersStatus()]);
-      renderAll();
+      // НЕ вызываем renderAll() — только точечные DOM-апдейты
+      updateNavBadges();
+      updateHeaderStatus();
     } catch (error) {
       console.error('[Factory] Polling error:', error);
     }
