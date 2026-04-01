@@ -26,7 +26,7 @@ from typing import Any
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import load_dotenv, resolve_db_path
+from .config import load_dotenv, resolve_db_path, AccountManager
 from .composition import wire
 from .dashboard_api import _agents, _fsm_stub
 from .dashboard_live_read import api_forge_inbox_simple
@@ -46,10 +46,26 @@ from .work_item_api_ops import (
 )
 from .agents.planner import decompose_with_planner
 from .contracts.planner import PlannerInput
+from .chat_service import ChatService
 
 load_dotenv()
 
 app = FastAPI(title="Factory read-only API", version="1.0")
+
+# ═══════════════════════════════════════════════════════
+# CORS - разрешаем запросы с localhost:8080
+# ═══════════════════════════════════════════════════════
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 async def require_api_key(request: Request) -> None:
@@ -1417,6 +1433,96 @@ def create_vision(
                 conn.close()
             except Exception:
                 pass
+
+
+# ═══════════════════════════════════════════════════════
+# CHAT (Qwen SSE)
+# ═══════════════════════════════════════════════════════
+
+@app.post("/api/chat/qwen")
+async def chat_qwen_create(request: Request) -> dict[str, str]:
+    """
+    Создать сессию чата с Qwen.
+    Возвращает chat_id для подключения к SSE потоку.
+    """
+    from .db import init_db
+
+    try:
+        body = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+
+    prompt = body.get("prompt", "")
+    context = body.get("context", {})
+    work_item_id = body.get("work_item_id")
+
+    if not prompt:
+        raise HTTPException(status_code=400, detail="prompt is required")
+
+    try:
+        tmp = init_db(_db_path())
+        tmp.close()
+    except sqlite3.OperationalError as e:
+        if "locked" not in str(e).lower():
+            raise
+
+    conn = _open_rw()
+    account_manager = AccountManager(conn, FactoryLogger(conn))
+
+    # ChatService теперь принимает db_path и создаёт свои соединения
+    service = ChatService(_db_path(), account_manager)
+
+    full_context = context or {}
+    if work_item_id:
+        work_item = conn.execute(
+            "SELECT * FROM work_items WHERE id = ?",
+            (work_item_id,)
+        ).fetchone()
+        if work_item:
+            full_context.update({
+                'work_item_id': work_item_id,
+                'kind': work_item['kind'],
+                'title': work_item['title'],
+                'description': work_item['description'],
+                'status': work_item['status']
+            })
+
+    chat_id = service.create_chat_session(prompt, full_context)
+    conn.close()
+
+    return {"chat_id": chat_id}
+
+
+@app.get("/api/chat/qwen/{chat_id}/stream")
+async def chat_qwen_stream(chat_id: str):
+    """SSE поток для чата с Qwen."""
+    from starlette.responses import StreamingResponse
+    from .db import init_db
+
+    try:
+        tmp = init_db(_db_path())
+        tmp.close()
+    except sqlite3.OperationalError as e:
+        if "locked" not in str(e).lower():
+            raise
+
+    conn = _open_rw()
+    account_manager = AccountManager(conn, FactoryLogger(conn))
+    service = ChatService(_db_path(), account_manager)
+
+    async def generate():
+        async for chunk in service.stream_chat_response(chat_id):
+            yield chunk
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 
 def main(argv: list[str] | None = None) -> None:

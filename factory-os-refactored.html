@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark" data-api-base="">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Factory OS</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%234f98a3'/%3E%3Ctext x='16' y='22' text-anchor='middle' fill='%23fff' font-size='14' font-family='system-ui,sans-serif'%3EF%3C/text%3E%3C/svg%3E" />
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- External Libraries -->
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.441.0/dist/umd/lucide.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<!-- Factory OS Styles -->
+<link rel="stylesheet" href="/static/css/factory.css">
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M2 4h4v4H2zM10 4h4v4h-4zM6 10h4v4H6z"/>
+        <path d="M4 8v2M12 8v2M8 4V2"/>
+      </svg>
+    </div>
+    Factory OS
+  </div>
+  <div style="width:1px;height:20px;background:var(--border)"></div>
+  <span class="orch-status-wrap" id="orch-status-wrap">
+    <span id="orch-dot" class="orch-dot"></span>
+    <span id="orch-status-text">Orchestrator: —</span>
+  </span>
+  <div class="header-spacer"></div>
+  <div class="header-meta">
+    <span class="live-status-wrap">
+      <span id="live-dot-status" class="live-dot offline"></span>
+      <span id="live-status-text">Offline</span>
+    </span>
+    <span id="header-agent-summary">3 агента активны</span>
+    <div style="width:1px;height:14px;background:var(--border)"></div>
+    <span id="header-clock" class="header-clock">--:--:--</span>
+    <div style="width:1px;height:14px;background:var(--border)"></div>
+    <button type="button" id="header-new-vision-btn" class="header-new-vision-btn" onclick="openVisionModal()">+ New Vision</button>
+    <div style="width:1px;height:14px;background:var(--border)"></div>
+    <span id="worker-mode-pill" class="api-pill">✋ Manual</span>
+    <div style="width:1px;height:14px;background:var(--border)"></div>
+    <div class="orch-menu-wrap">
+      <button type="button" class="orch-menu-btn" id="orch-menu-btn" onclick="toggleOrchestratorMenu(event)">⚙ Оркестратор ▾</button>
+      <div class="orch-dropdown" id="orch-dropdown">
+        <button type="button" class="orch-dd-item" onclick="orchestratorStart();closeOrchestratorMenu();">Start</button>
+        <button type="button" class="orch-dd-item" onclick="orchestratorStop();closeOrchestratorMenu();">Stop</button>
+        <button type="button" class="orch-dd-item" onclick="orchestratorManualTick();closeOrchestratorMenu();">Manual Tick</button>
+        <div class="divider"></div>
+        <button type="button" class="orch-dd-item" onclick="manualDashboardRefresh();closeOrchestratorMenu();">Обновить</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div id="connection-banner" class="connection-banner"></div>
+<div id="factory-toast" class="factory-toast"></div>
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <span class="nav-section-label">Основное</span>
+  <button class="nav-item" id="nav-journal" onclick="showPage('log',this)">📄 Журнал</button>
+  <button class="nav-item active" id="nav-dashboard" onclick="showPage('dashboard',this)">📊 Dashboard</button>
+  <button class="nav-item" id="nav-analytics" onclick="showPage('analytics',this)">📈 Analytics</button>
+  <button class="nav-item" id="nav-tree" onclick="showPage('tree',this)">🌳 Дерево задач</button>
+  <button class="nav-item" id="nav-forge" onclick="showPage('forge',this)">⚡ Очередь Forge</button>
+  
+  <span class="nav-section-label">Контроль</span>
+  <button class="nav-item" id="nav-fsm" onclick="showPage('fsm',this)">🔀 FSM</button>
+  
+  <span class="nav-section-label">Агенты</span>
+  <button class="nav-item" id="nav-agents" onclick="showPage('agents',this)">👥 Агенты</button>
+  
+  <span class="nav-section-label">Суд / сбои / HR</span>
+  <button class="nav-item" id="nav-judgements" onclick="showPage('judgements',this)">⚖️ Решения судьи</button>
+  <button class="nav-item" id="nav-failures" onclick="showPage('failures',this)">⚠️ Кластеры сбоев</button>
+  <button class="nav-item" id="nav-improvements" onclick="showPage('improvements',this)">💡 Improvements</button>
+  <button class="nav-item" id="nav-hr" onclick="showPage('hr',this)">📋 Роли и HR</button>
+  
+  <!-- Chat Toggle Button -->
+  <button type="button" class="chat-toggle-btn" onclick="toggleChat()">
+    💬 Chat с Qwen
+  </button>
+</nav>
+
+<!-- MAIN -->
+<main class="main">
+  <!-- DASHBOARD PAGE -->
+  <div class="page active" id="page-dashboard">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Dashboard</div>
+        <div class="page-sub">Состояние фабрики в реальном времени</div>
+      </div>
+    </div>
+    
+    <div class="kpi-grid" id="kpi-grid"></div>
+    
+    <div class="card">
+      <div class="card-header">◇ Visions</div>
+      <div id="dashboard-visions"></div>
+    </div>
+    
+    <div class="card">
+      <div class="card-header">◇ Журнал (последние события)</div>
+      <div class="dashboard-log-feed" id="dashboard-log-feed"></div>
+    </div>
+  </div>
+  
+  <!-- LOG PAGE -->
+  <div class="page" id="page-log">
+    <div class="page-header">
+      <div class="page-title">Журнал событий</div>
+    </div>
+    <div id="log-entries"></div>
+  </div>
+  
+  <!-- ANALYTICS PAGE -->
+  <div class="page" id="page-analytics">
+    <div class="page-header">
+      <div class="page-title">Analytics</div>
+    </div>
+    <div id="analytics-content"></div>
+  </div>
+  
+  <!-- TREE PAGE -->
+  <div class="page" id="page-tree">
+    <div class="page-header">
+      <div class="page-title">Дерево задач</div>
+    </div>
+    <div id="task-tree-root"></div>
+  </div>
+  
+  <!-- FORGE PAGE -->
+  <div class="page" id="page-forge">
+    <div class="page-header">
+      <div class="page-title">Очередь Forge</div>
+    </div>
+    <div id="forge-queue"></div>
+  </div>
+  
+  <!-- FSM PAGE -->
+  <div class="page" id="page-fsm">
+    <div class="page-header">
+      <div class="page-title">FSM (State Machine)</div>
+    </div>
+    <div id="fsm-content"></div>
+  </div>
+  
+  <!-- AGENTS PAGE -->
+  <div class="page" id="page-agents">
+    <div class="page-header">
+      <div class="page-title">Агенты</div>
+    </div>
+    <div id="agents-content"></div>
+  </div>
+  
+  <!-- JUDGEMENTS PAGE -->
+  <div class="page" id="page-judgements">
+    <div class="page-header">
+      <div class="page-title">Решения судьи</div>
+    </div>
+    <div id="judgements-content"></div>
+  </div>
+  
+  <!-- FAILURES PAGE -->
+  <div class="page" id="page-failures">
+    <div class="page-header">
+      <div class="page-title">Кластеры сбоев</div>
+    </div>
+    <div id="failures-content"></div>
+  </div>
+  
+  <!-- IMPROVEMENTS PAGE -->
+  <div class="page" id="page-improvements">
+    <div class="page-header">
+      <div class="page-title">Improvements</div>
+    </div>
+    <div id="improvements-content"></div>
+  </div>
+  
+  <!-- HR PAGE -->
+  <div class="page" id="page-hr">
+    <div class="page-header">
+      <div class="page-title">Роли и HR</div>
+    </div>
+    <div id="hr-content"></div>
+  </div>
+</main>
+
+<!-- CHAT PANEL -->
+<div id="chat-panel" class="chat-panel-container"></div>
+
+<!-- Main JS Module -->
+<script type="module" src="/static/js/main.js"></script>
+
+</body>
+</html>

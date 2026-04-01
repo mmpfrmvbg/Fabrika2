@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(get-content *)",
+      "Bash(python *)",
+      "Bash(git add *)"
+    ]
+  },
+  "$version": 3
+}
