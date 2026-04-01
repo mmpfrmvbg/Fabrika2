@@ -1284,6 +1284,12 @@ def failure_clusters() -> dict[str, Any]:
     return {"clusters": []}
 
 
+@app.get("/api/failures")
+def failures() -> dict[str, Any]:
+    """Alias for /api/failure-clusters for frontend compatibility."""
+    return {"items": []}
+
+
 @app.get("/api/hr")
 def hr_stub() -> dict[str, Any]:
     return {"policies": [], "proposals": []}
