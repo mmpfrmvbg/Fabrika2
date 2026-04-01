@@ -7,3 +7,12 @@
 wet_*.db
 __pycache__/
 *.pyc
+
+e2e-chain
+e2e-review
+factory_qwen_cli_adapter_v1_draft.md
+hello.py
+nonexistent.py
+wet_hello_after_atom.json
+kill_mod/
+logger/
