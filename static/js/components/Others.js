@@ -275,6 +275,85 @@ export function JudgementsComponent(container) {
   return () => { if (unsubscribe) unsubscribe(); };
 }
 
+// ═══════════════════════════════════════════════════════
+// HR COMPONENT
+// ═══════════════════════════════════════════════════════
+
+export function HRComponent(container) {
+  let unsubscribe = null;
+
+  function subscribeToStore() {
+    unsubscribe = subscribe((state) => {
+      if (state.activePage === 'hr') {
+        render(state.hr);
+      }
+    });
+  }
+
+  function render(hr) {
+    if (!container) return;
+
+    const policies = hr?.policies ?? [];
+    const proposals = hr?.proposals ?? [];
+
+    container.innerHTML = `
+      <div class="page-header" style="margin-bottom:var(--space-4)">
+        <div class="page-title">Роли и HR</div>
+        <div class="page-sub">Prompt governance и policy management</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4)">
+        <div class="card">
+          <div class="card-header"><span class="card-header-icon">◈</span> Policy Bundles</div>
+          <div class="tbl-wrap">
+            <table id="tbl-policies">
+              <thead>
+                <tr><th>ID</th><th>Name</th><th>Version</th><th>Active</th></tr>
+              </thead>
+              <tbody>
+                ${!policies || policies.length === 0 ? `
+                  <tr><td colspan="4" style="padding:40px;text-align:center;color:var(--text-muted)">Нет policy bundles</td></tr>
+                ` : policies.map(p => `
+                  <tr>
+                    <td class="mono-id">${escapeHtml(p.id?.slice(0, 8) || '')}...</td>
+                    <td>${escapeHtml(p.name || '—')}</td>
+                    <td class="mono-id">${escapeHtml(p.version || '—')}</td>
+                    <td>${p.active ? '✓' : '—'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-header-icon">◈</span> Предложения HR</div>
+          <div class="tbl-wrap">
+            <table id="tbl-hr-proposals">
+              <thead>
+                <tr><th>ID</th><th>Prompt</th><th>Status</th><th>Created</th></tr>
+              </thead>
+              <tbody>
+                ${!proposals || proposals.length === 0 ? `
+                  <tr><td colspan="4" style="padding:40px;text-align:center;color:var(--text-muted)">Нет предложений</td></tr>
+                ` : proposals.map(p => `
+                  <tr>
+                    <td class="mono-id">${escapeHtml(p.id?.slice(0, 8) || '')}...</td>
+                    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(p.prompt_key || '—')}</td>
+                    <td><span class="badge s-${p.status === 'accepted' ? 'done' : p.status === 'pending' ? 'ready_for_work' : 'draft'}">${escapeHtml(p.status)}</span></td>
+                    <td class="mono-id" style="font-size:10px;color:var(--text-faint)">${formatTime(p.created_at)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  subscribeToStore();
+  return () => { if (unsubscribe) unsubscribe(); };
+}
+
 // Helpers
 function getPriorityColor(score) {
   if (score > 0.7) return 'var(--error)';

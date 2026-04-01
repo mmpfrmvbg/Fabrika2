@@ -230,11 +230,15 @@ export const api = {
   async getFsmTransitions() {
     return fetchJson('/api/fsm/work_item');
   },
-  
+
   async getAgents() {
     return fetchJson('/api/agents');
   },
-  
+
+  async getHR() {
+    return fetchJson('/api/hr');
+  },
+
   // ── Improvements ─────────────────────────────────────
   async getImprovements() {
     return fetchJson('/api/improvements');

@@ -200,9 +200,10 @@ export function AnalyticsComponent(container) {
     });
     
     // Stages chart
-    const f = Number(st.forge?.avg_duration_sec) || 0;
-    const rv = Number(st.review?.avg_duration_sec) || 0;
-    const j = Number(st.judge?.avg_duration_sec) || 0;
+    const stages = data.stages || {};
+    const f = Number(stages.forge?.avg_duration_sec) || 0;
+    const rv = Number(stages.review?.avg_duration_sec) || 0;
+    const j = Number(stages.judge?.avg_duration_sec) || 0;
     
     chartStages = new Chart(elS, {
       type: 'bar',

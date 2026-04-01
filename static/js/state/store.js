@@ -242,13 +242,26 @@ export const store = {
   async loadImprovements() {
     try {
       const improvements = await api.getImprovements();
-      this.update({ 
+      this.update({
         improvements: {
-          items: this._normalizeArray(improvements?.items || improvements)
+          candidates: this._normalizeArray(improvements?.candidates || improvements),
+          stats: improvements?.stats || {}
         }
       });
     } catch (error) {
       console.error('[Store] Failed to load improvements:', error);
+    }
+  },
+
+  /**
+   * Загрузить HR (roles, policies, proposals)
+   */
+  async loadHR() {
+    try {
+      const hr = await api.getHR();
+      this.update({ hr });
+    } catch (error) {
+      console.error('[Store] Failed to load HR:', error);
     }
   },
   
