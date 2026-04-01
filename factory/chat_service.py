@@ -112,6 +112,7 @@ class ChatService:
         """
         import subprocess
         import shutil
+        import os
         
         full_prompt = self._build_chat_prompt(
             session['prompt'],
@@ -123,13 +124,19 @@ class ChatService:
         if not qwen_cmd:
             raise RuntimeError('qwen команда не найдена в PATH')
         
+        # Настроить окружение для чистого вывода без ANSI-кодов
+        env = os.environ.copy()
+        env['NO_COLOR'] = '1'      # убрать ANSI escape-коды из вывода
+        env['TERM'] = 'dumb'       # убрать цветовое форматирование
+        
         try:
             result = subprocess.run(
-                [qwen_cmd, '-p', full_prompt, '--no-interactive', '--output-format', 'text'],
+                [qwen_cmd, full_prompt, '--channel', 'CI', '--yolo'],
                 capture_output=True,
                 text=True,
                 encoding='utf-8',
-                timeout=120
+                timeout=120,
+                env=env
             )
             
             output = result.stdout.strip()
