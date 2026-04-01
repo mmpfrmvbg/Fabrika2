@@ -12,8 +12,8 @@ from .config import ACCOUNTS, DB_PATH
 from .models import Role
 from .schema_ddl import DDL, V_API_USAGE_TODAY_RECREATE
 
-# Последняя миграция: 1=базовый DDL, 2=improvement_candidates, 3=file_changes.intent_override, 4=fsm creator_cancelled/archive_sweep
-_SCHEMA_VERSION = 4
+# Последняя миграция: 1=базовый DDL, 2=improvement_candidates, 3=file_changes.intent_override, 4=fsm creator_cancelled/archive_sweep, 5=judge_rejected release locks, 6=cleanup stale locks
+_SCHEMA_VERSION = 6
 
 # Migration v2: self-improvement candidates (idempotent CREATE TABLE IF NOT EXISTS)
 IMPROVEMENT_CANDIDATES_DDL = """
@@ -98,6 +98,83 @@ def _migration_fsm_creator_archive_api(conn: sqlite3.Connection) -> None:
             ('st_archive_sweep','work_item','done','archive_sweep','archived',
              'guard_work_item_done','action_archive_finalize',NULL,
              'Архив завершённой задачи (archive_sweep)');
+        """
+    )
+
+
+def _migration_fsm_judge_rejected_release_locks(conn: sqlite3.Connection) -> None:
+    """
+    Миграция 5: Добавляет action_release_file_locks к переходу st_07 (judge_rejected).
+
+    Проблема: атомы в judge_rejected не освобождали блокировки файлов,
+    что блокировало все новые атомы с тем же путём.
+    """
+    # Обновляем st_07 для не-атомов (vision, initiative, epic, story, task)
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO state_transitions VALUES
+            ('st_07','work_item','ready_for_judge','judge_rejected','judge_rejected',
+             '','action_return_to_author;action_release_file_locks',NULL,
+             'Судья отклонил — возврат автору с комментарием + освобождение блокировок')
+        """
+    )
+    # Добавляем явный переход для атомов: judge_rejected -> ready_for_work с освобождением блокировок
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO state_transitions VALUES
+            ('st_07d','work_item','ready_for_judge','judge_rejected','ready_for_work',
+             '','action_enqueue_forge;action_release_file_locks','["atom"]',
+             'Атом отклонён судьёй — в кузницу с освобождением блокировок')
+        """
+    )
+
+
+def _migration_cleanup_stale_locks(conn: sqlite3.Connection) -> None:
+    """
+    Миграция 6: Очищает зависшие блокировки и обновляет статусы застрявших атомов.
+
+    Проблема: при сбое worker'а блокировки файлов не освобождались,
+    что блокировало все новые атомы с теми же путями.
+    """
+    # Освобождаем все истёкшие блокировки (expires_at < now)
+    # Используем replace для корректного сравнения ISO дат с 'T'
+    conn.execute(
+        """
+        UPDATE file_locks
+        SET released_at = COALESCE(released_at, strftime('%Y-%m-%dT%H:%M:%f','now'))
+        WHERE released_at IS NULL
+          AND replace(expires_at, 'T', ' ') < datetime('now')
+        """
+    )
+    # Находим work_item_id с зависшими блокировками и статусом judge_rejected/cancelled
+    # и переводим их в ready_for_work для повторной обработки
+    conn.execute(
+        """
+        UPDATE work_items
+        SET status = 'ready_for_work',
+            previous_status = status,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%f','now')
+        WHERE id IN (
+            SELECT DISTINCT fl.work_item_id
+            FROM file_locks fl
+            WHERE fl.released_at IS NULL
+              AND replace(fl.expires_at, 'T', ' ') < datetime('now')
+        )
+        AND status IN ('judge_rejected', 'in_progress', 'in_review')
+        AND kind = 'atom'
+        """
+    )
+    # Обновляем work_item_queue — снимаем lease с зависших задач
+    conn.execute(
+        """
+        UPDATE work_item_queue
+        SET lease_owner = NULL, lease_until = NULL
+        WHERE work_item_id IN (
+            SELECT fl.work_item_id
+            FROM file_locks fl
+            WHERE fl.released_at IS NULL
+        )
+        AND lease_owner IS NOT NULL
         """
     )
 
@@ -239,6 +316,20 @@ def ensure_schema(db_path: Path = DB_PATH) -> None:
                 conn.execute(
                     "INSERT OR IGNORE INTO migrations(version, name) VALUES (4, 'fsm_creator_cancelled_archive_sweep')"
                 )
+                mv = _max_migration_version(conn)
+
+            if mv < 5:
+                _migration_fsm_judge_rejected_release_locks(conn)
+                conn.execute(
+                    "INSERT OR IGNORE INTO migrations(version, name) VALUES (5, 'fsm_judge_rejected_release_locks')"
+                )
+                mv = _max_migration_version(conn)
+
+            if mv < 6:
+                _migration_cleanup_stale_locks(conn)
+                conn.execute(
+                    "INSERT OR IGNORE INTO migrations(version, name) VALUES (6, 'cleanup_stale_locks')"
+                )
 
             conn.commit()
         finally:
@@ -378,12 +469,17 @@ def get_connection(db_path: Path | str = DB_PATH, *, read_only: bool = False) ->
         conn.execute("PRAGMA query_only = ON")
         return conn
 
-    conn = sqlite3.connect(str(p), timeout=30)
+    conn = sqlite3.connect(str(p), timeout=60.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 15000")
+    conn.execute("PRAGMA busy_timeout = 30000")
     conn.execute("PRAGMA wal_autocheckpoint = 100")
+    # Явный checkpoint при подключении для разблокировки после сбоев
+    try:
+        conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+    except sqlite3.OperationalError:
+        pass  # Игнорируем, если БД заблокирована другим процессом
     return conn
 
 
