@@ -85,16 +85,43 @@ export function ImprovementsComponent(container) {
   function render(improvements) {
     if (!container) return;
 
-    // Нормализуем - improvements возвращает {candidates: [...], stats: {...}}
     const improvementsArray = improvements?.candidates ?? improvements?.items ?? (Array.isArray(improvements) ? improvements : []);
     const stats = improvements?.stats ?? {};
 
-    const kpiContainer = document.getElementById('improvements-kpi-row');
-    const tableBody = document.getElementById('tbl-improvements-body');
-    const detailCard = document.getElementById('improvements-detail-card');
+    // Строим каркас страницы
+    container.innerHTML = `
+      <div class="page-header" style="margin-bottom:var(--space-4)">
+        <div class="page-title">Improvements</div>
+        <div class="page-sub">Кандидаты на улучшение системы</div>
+      </div>
+      <div class="kpi-grid" id="improvements-kpi-row" style="margin-bottom:var(--space-4)"></div>
+      <div class="card">
+        <div class="card-header"><span class="card-header-icon">◈</span> Candidates</div>
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Score</th><th>Source</th><th>Title</th>
+                <th>Target</th><th>Risk</th><th>Status</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tbl-improvements-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" id="improvements-detail-card" style="display:none;margin-top:var(--space-4)">
+        <div class="card-header"><span class="card-header-icon">◈</span> Detail</div>
+        <div id="improvements-detail-body" style="padding:var(--space-4)"></div>
+      </div>
+    `;
 
-    if (!improvements || !improvementsArray) {
-      if (tableBody) tableBody.innerHTML = '<tr><td colspan="7" style="padding:18px;color:var(--text-muted)">Загрузка...</td></tr>';
+    // Теперь заполняем элементы — они уже существуют в DOM
+    const kpiContainer = container.querySelector('#improvements-kpi-row');
+    const tableBody = container.querySelector('#tbl-improvements-body');
+    const detailCard = container.querySelector('#improvements-detail-card');
+
+    if (!improvementsArray || improvementsArray.length === 0) {
+      if (tableBody) tableBody.innerHTML = '<tr><td colspan="7" style="padding:40px;text-align:center;color:var(--text-muted)">Нет данных</td></tr>';
       return;
     }
 
@@ -108,17 +135,17 @@ export function ImprovementsComponent(container) {
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Approved</div>
-          <div class="kpi-value">${stats.approved || improvementsArray.filter(i => i.status === 'approved').length}</div>
+          <div class="kpi-value">${stats.approved ?? (improvementsArray.filter(i => i.status === 'approved').length)}</div>
           <div class="kpi-delta up">✓</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Converted</div>
-          <div class="kpi-value">${stats.converted || improvementsArray.filter(i => i.status === 'converted').length}</div>
+          <div class="kpi-value">${stats.converted ?? (improvementsArray.filter(i => i.status === 'converted').length)}</div>
           <div class="kpi-delta neutral">To Vision</div>
         </div>
       `;
     }
-    
+
     // Table
     if (tableBody) {
       tableBody.innerHTML = improvementsArray.map(imp => `
@@ -148,13 +175,14 @@ export function ImprovementsComponent(container) {
         </tr>
       `).join('');
     }
-    
+
     // Detail pane
     if (detailCard && selectedId) {
       const selected = improvementsArray.find(i => i.id === selectedId);
       if (selected) {
         detailCard.style.display = 'block';
-        document.getElementById('improvements-detail-body').innerHTML = `
+        const detailBody = container.querySelector('#improvements-detail-body');
+        if (detailBody) detailBody.innerHTML = `
           <div style="margin-bottom:var(--space-2)">
             <strong style="color:var(--text)">Title:</strong> ${escapeHtml(selected.title)}
           </div>

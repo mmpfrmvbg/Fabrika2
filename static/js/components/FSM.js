@@ -58,10 +58,16 @@ export function FSMComponent(container) {
       </div>
     `;
 
-    if (transitions && transitions.length > 0) {
-      renderTransitionsTable({ transitions });
+    // Заполняем элементы — они уже существуют в DOM
+    const tblEl = container.querySelector('#tbl-transitions');
+    if (tblEl && transitions && transitions.length > 0) {
+      tblEl.innerHTML = renderTransitionsTable({ transitions });
     }
-    renderFSMSvg({ transitions });
+
+    const svgEl = container.querySelector('#fsm-svg');
+    if (svgEl) {
+      svgEl.innerHTML = renderFSMSvg({ transitions });
+    }
   }
   
   function renderTransitionsTable(fsm) {
