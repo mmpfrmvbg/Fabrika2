@@ -23,38 +23,43 @@ export function AgentsComponent(container) {
   
   function render(agents) {
     if (!container) return;
-    
+
     // Нормализуем - agents может быть в обёртке { agents: [...] }
     const agentsArray = agents?.agents || Array.isArray(agents) ? agents : [];
-    
-    if (!agentsArray || agentsArray.length === 0) {
-      container.innerHTML = '<div style="color:var(--text-muted);padding:20px">Загрузка агентов...</div>';
-      return;
-    }
-    
-    container.innerHTML = agentsArray.map(agent => `
-      <div class="card" style="padding:var(--space-4)">
-        <div style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:var(--space-3)">
-          <span class="role-badge r-${agent.role}">${escapeHtml(agent.role)}</span>
-          <span class="badge s-${agent.status === 'active' ? 'done' : 'draft'}">${escapeHtml(agent.status)}</span>
-          <span class="mono-id" style="margin-left:auto">${escapeHtml(agent.id?.slice(0, 12) || '')}...</span>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-3);font-size:var(--text-sm)">
-          <div>
-            <div style="color:var(--text-faint);font-size:11px">Model</div>
-            <div class="mono-id">${escapeHtml(agent.model_name || '—')}</div>
-          </div>
-          <div>
-            <div style="color:var(--text-faint);font-size:11px">Prompt</div>
-            <div class="mono-id">${escapeHtml(agent.prompt_version || '—')}</div>
-          </div>
-          <div>
-            <div style="color:var(--text-faint);font-size:11px">Runs today</div>
-            <div class="mono-id">${agent.runs_today || 0}</div>
-          </div>
-        </div>
+
+    container.innerHTML = `
+      <div class="page-header" style="margin-bottom:var(--space-4)">
+        <div class="page-title">Агенты</div>
+        <div class="page-sub">Реестр агентов, роли, модели, версии промптов</div>
       </div>
-    `).join('');
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:var(--space-4)" id="agents-grid">
+        ${!agentsArray || agentsArray.length === 0 ? `
+          <div style="color:var(--text-muted);padding:40px;text-align:center">Загрузка агентов...</div>
+        ` : agentsArray.map(agent => `
+          <div class="card">
+            <div style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:var(--space-3)">
+              <span class="role-badge r-${agent.role}">${escapeHtml(agent.role)}</span>
+              <span class="badge s-${agent.status === 'active' ? 'done' : 'draft'}">${escapeHtml(agent.status)}</span>
+              <span class="mono-id" style="margin-left:auto">${escapeHtml(agent.id?.slice(0, 12) || '')}...</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-3);font-size:var(--text-sm)">
+              <div>
+                <div style="color:var(--text-faint);font-size:11px">Model</div>
+                <div class="mono-id">${escapeHtml(agent.model_name || '—')}</div>
+              </div>
+              <div>
+                <div style="color:var(--text-faint);font-size:11px">Prompt</div>
+                <div class="mono-id">${escapeHtml(agent.prompt_version || '—')}</div>
+              </div>
+              <div>
+                <div style="color:var(--text-faint);font-size:11px">Runs today</div>
+                <div class="mono-id">${agent.runs_today || 0}</div>
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
   }
   
   subscribeToStore();
@@ -79,19 +84,20 @@ export function ImprovementsComponent(container) {
   
   function render(improvements) {
     if (!container) return;
-    
-    // Нормализуем - improvements может быть в обёртке { items: [...] }
-    const improvementsArray = improvements?.items || Array.isArray(improvements) ? improvements : [];
-    
+
+    // Нормализуем - improvements возвращает {candidates: [...], stats: {...}}
+    const improvementsArray = improvements?.candidates || improvements?.items || Array.isArray(improvements) ? improvements : [];
+    const stats = improvements?.stats || {};
+
     const kpiContainer = document.getElementById('improvements-kpi-row');
     const tableBody = document.getElementById('tbl-improvements-body');
     const detailCard = document.getElementById('improvements-detail-card');
-    
+
     if (!improvements || !improvementsArray) {
       if (tableBody) tableBody.innerHTML = '<tr><td colspan="7" style="padding:18px;color:var(--text-muted)">Загрузка...</td></tr>';
       return;
     }
-    
+
     // KPI
     if (kpiContainer) {
       kpiContainer.innerHTML = `
@@ -102,12 +108,12 @@ export function ImprovementsComponent(container) {
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Approved</div>
-          <div class="kpi-value">${improvementsArray.filter(i => i.status === 'approved').length}</div>
+          <div class="kpi-value">${stats.approved || improvementsArray.filter(i => i.status === 'approved').length}</div>
           <div class="kpi-delta up">✓</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Converted</div>
-          <div class="kpi-value">${improvementsArray.filter(i => i.status === 'converted').length}</div>
+          <div class="kpi-value">${stats.converted || improvementsArray.filter(i => i.status === 'converted').length}</div>
           <div class="kpi-delta neutral">To Vision</div>
         </div>
       `;
@@ -145,7 +151,7 @@ export function ImprovementsComponent(container) {
     
     // Detail pane
     if (detailCard && selectedId) {
-      const selected = improvements.items.find(i => i.id === selectedId);
+      const selected = improvementsArray.find(i => i.id === selectedId);
       if (selected) {
         detailCard.style.display = 'block';
         document.getElementById('improvements-detail-body').innerHTML = `
@@ -219,45 +225,49 @@ export function JudgementsComponent(container) {
   }
   
   function render(judgements) {
-    const tableContainer = document.getElementById('tbl-judgements');
-    
-    if (!tableContainer) return;
-    
-    // Нормализуем - judgements может быть в обёртке { items: [...] }
+    // Нормализуем - judgements может быть в обёртке { items: [...] } или массивом
     const judgementsArray = judgements?.items || Array.isArray(judgements) ? judgements : [];
-    
-    if (!judgements || !judgementsArray) {
-      tableContainer.innerHTML = '<tbody><tr><td colspan="6" style="padding:18px;color:var(--text-muted)">Загрузка...</td></tr></tbody>';
-      return;
-    }
-    
-    tableContainer.innerHTML = `
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Work Item</th>
-          <th>Verdict</th>
-          <th>Reason</th>
-          <th>Event</th>
-          <th>Created</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${judgementsArray.map(j => `
-          <tr>
-            <td class="mono-id">${escapeHtml(j.id?.slice(0, 8) || '')}...</td>
-            <td class="mono-id">${escapeHtml(j.work_item_id || '—')}</td>
-            <td>
-              <span class="badge s-${j.verdict === 'approved' ? 'done' : j.verdict === 'rejected' ? 'failed' : 'blocked'}">
-                ${escapeHtml(j.verdict)}
-              </span>
-            </td>
-            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(j.reason_code || '—')}</td>
-            <td class="mono-id" style="font-size:10px">${escapeHtml(j.event || '—')}</td>
-            <td class="mono-id" style="font-size:10px;color:var(--text-faint)">${formatTime(j.created_at)}</td>
-          </tr>
-        `).join('')}
-      </tbody>
+
+    container.innerHTML = `
+      <div class="page-header" style="margin-bottom:var(--space-4)">
+        <div class="page-title">Решения судьи</div>
+        <div class="page-sub">Решения судьи, привязка к задачам, переходам и кластерам сбоев</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-header-icon">◈</span> Решения</div>
+        <div class="tbl-wrap">
+          <table id="tbl-judgements">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Work Item</th>
+                <th>Verdict</th>
+                <th>Reason</th>
+                <th>Event</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${!judgementsArray || judgementsArray.length === 0 ? `
+                <tr><td colspan="6" style="padding:40px;text-align:center;color:var(--text-muted)">Загрузка...</td></tr>
+              ` : judgementsArray.map(j => `
+                <tr>
+                  <td class="mono-id">${escapeHtml(j.id?.slice(0, 8) || '')}...</td>
+                  <td class="mono-id">${escapeHtml(j.work_item_id || '—')}</td>
+                  <td>
+                    <span class="badge s-${j.verdict === 'approved' ? 'done' : j.verdict === 'rejected' ? 'failed' : 'blocked'}">
+                      ${escapeHtml(j.verdict)}
+                    </span>
+                  </td>
+                  <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(j.reason_code || '—')}</td>
+                  <td class="mono-id" style="font-size:10px">${escapeHtml(j.event || '—')}</td>
+                  <td class="mono-id" style="font-size:10px;color:var(--text-faint)">${formatTime(j.created_at)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
     `;
   }
   

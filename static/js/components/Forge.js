@@ -19,21 +19,24 @@ export function ForgeComponent(container) {
   
   function render(workersStatus, workItems) {
     if (!container) return;
-    
-    const queue = workersStatus?.workers || [];
-    
-    if (!queue || queue.length === 0) {
-      container.innerHTML = `
-        <div class="empty-state">
-          <div class="es-icon">⚡</div>
-          <div class="es-title">Очередь Forge пуста</div>
-          <div class="es-sub">Нет активных задач в работе</div>
-        </div>
-      `;
-      return;
-    }
-    
-    container.innerHTML = queue.map(worker => renderWorkerCard(worker, workItems)).join('');
+
+    const queue = workersStatus?.workers || workersStatus?.active_workers || [];
+
+    container.innerHTML = `
+      <div class="page-header" style="margin-bottom:var(--space-4)">
+        <div class="page-title">Очередь Forge</div>
+        <div class="page-sub">Атомарные задачи, готовые к исполнению</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:var(--space-3)">
+        ${!queue || queue.length === 0 ? `
+          <div class="empty-state">
+            <div class="es-icon">⚡</div>
+            <div class="es-title">Очередь Forge пуста</div>
+            <div class="es-sub">Нет активных задач в работе</div>
+          </div>
+        ` : queue.map(worker => renderWorkerCard(worker, workItems)).join('')}
+      </div>
+    `;
   }
   
   function renderWorkerCard(worker, workItems) {

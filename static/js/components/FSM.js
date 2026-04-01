@@ -34,18 +34,34 @@ export function FSMComponent(container) {
   
   function render(fsm, workItems) {
     if (!container) return;
-    
-    // Таблица переходов
-    const tableContainer = document.getElementById('tbl-transitions');
-    if (tableContainer) {
-      tableContainer.innerHTML = renderTransitionsTable(fsm);
+
+    const transitions = fsm?.transitions || Array.isArray(fsm) ? fsm : [];
+    const stateCounts = calculateStateCounts(workItems);
+
+    container.innerHTML = `
+      <div class="card" style="margin-bottom:var(--space-4)">
+        <div class="card-header"><span class="card-header-icon">◈</span> State Summary</div>
+        <div style="display:flex;gap:var(--space-2);flex-wrap:wrap">
+          ${Object.entries(stateCounts).map(([state, count]) => `
+            <span class="badge s-${state}">${getStatusLabel(state)}: ${count}</span>
+          `).join('')}
+        </div>
+      </div>
+      <div class="fsm-canvas-wrap" style="margin-bottom:var(--space-4)">
+        <svg id="fsm-svg" viewBox="0 0 900 620" width="900" height="620" xmlns="http://www.w3.org/2000/svg" style="font-family:var(--font-mono)"></svg>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-header-icon">◈</span> Transitions Table</div>
+        <div class="tbl-wrap">
+          <table id="tbl-transitions"></table>
+        </div>
+      </div>
+    `;
+
+    if (transitions && transitions.length > 0) {
+      renderTransitionsTable({ transitions });
     }
-    
-    // SVG диаграмма (упрощённая)
-    const svgContainer = document.getElementById('fsm-svg');
-    if (svgContainer) {
-      svgContainer.innerHTML = renderFSMSvg(fsm);
-    }
+    renderFSMSvg({ transitions });
   }
   
   function renderTransitionsTable(fsm) {
@@ -102,6 +118,16 @@ export function FSMComponent(container) {
 }
 
 // Helpers
+function calculateStateCounts(workItems) {
+  const counts = {};
+  if (!workItems || !Array.isArray(workItems)) return counts;
+  workItems.forEach(wi => {
+    const status = wi.status || 'unknown';
+    counts[status] = (counts[status] || 0) + 1;
+  });
+  return counts;
+}
+
 function getStatusLabel(status) {
   return STATUS_CONFIG[status]?.label || status;
 }

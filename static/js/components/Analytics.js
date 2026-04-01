@@ -23,20 +23,41 @@ export function AnalyticsComponent(container) {
   
   function render(analytics) {
     if (!container) return;
-    
-    const kpiContainer = document.getElementById('analytics-kpi-grid');
-    const bottleneckContainer = document.getElementById('analytics-bottleneck');
-    
-    if (kpiContainer) {
-      kpiContainer.innerHTML = renderKPIs(analytics);
+
+    container.innerHTML = `
+      <div class="page-header" style="margin-bottom:var(--space-4)">
+        <div class="page-title">Analytics</div>
+        <div class="page-sub">Метрики фабрики</div>
+        <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <span style="font-size:10px;color:var(--text-faint);margin-right:4px">Период</span>
+          <button type="button" class="log-filter-btn analytics-period-btn ${currentPeriod === '24h' ? 'active' : ''}" onclick="window.setAnalyticsPeriod('24h', this)">24h</button>
+          <button type="button" class="log-filter-btn analytics-period-btn ${currentPeriod === '7d' ? 'active' : ''}" onclick="window.setAnalyticsPeriod('7d', this)">7d</button>
+          <button type="button" class="log-filter-btn analytics-period-btn ${currentPeriod === '30d' ? 'active' : ''}" onclick="window.setAnalyticsPeriod('30d', this)">30d</button>
+          <button type="button" class="log-filter-btn analytics-period-btn ${currentPeriod === 'all' ? 'active' : ''}" onclick="window.setAnalyticsPeriod('all', this)">All</button>
+        </div>
+      </div>
+      <div class="kpi-grid" id="analytics-kpi-grid" style="margin-bottom:var(--space-4)"></div>
+      <div class="card" style="margin-bottom:var(--space-3)">
+        <div class="card-header"><span class="card-header-icon">▤</span> Bottleneck</div>
+        <div id="analytics-bottleneck" style="padding:var(--space-3);font-size:var(--text-sm);color:var(--text-muted);line-height:1.5"></div>
+      </div>
+      <div class="charts-row">
+        <div class="card" style="flex:1.2;min-width:min(100%,380px)">
+          <div class="card-header"><span class="card-header-icon">◇</span> Throughput</div>
+          <div class="chart-container" style="min-height:220px"><canvas id="chart-analytics-throughput"></canvas></div>
+        </div>
+        <div class="card" style="flex:1;min-width:min(100%,320px)">
+          <div class="card-header"><span class="card-header-icon">◇</span> Stage time</div>
+          <div class="chart-container" style="min-height:220px"><canvas id="chart-analytics-stages"></canvas></div>
+        </div>
+      </div>
+    `;
+
+    if (analytics) {
+      renderKPIs(analytics);
+      renderBottleneck(analytics);
+      renderCharts(analytics);
     }
-    
-    if (bottleneckContainer) {
-      bottleneckContainer.innerHTML = renderBottleneck(analytics);
-    }
-    
-    // Charts
-    renderCharts(analytics);
   }
   
   function renderKPIs(data) {

@@ -83,20 +83,19 @@ export const store = {
 
   /**
    * Нормализовать ответ API — вернуть массив
-   * @param {any} value - что вернул API
-   * @returns {Array}
    */
-  _normalizeArray(value) {
+  _normalizeArray(value, key) {
     if (Array.isArray(value)) return value;
-    if (value?.items && Array.isArray(value.items)) return value.items;
-    if (value?.data && Array.isArray(value.data)) return value.data;
-    if (value?.visions && Array.isArray(value.visions)) return value.visions;
-    if (value?.work_items && Array.isArray(value.work_items)) return value.work_items;
-    if (value?.tree && Array.isArray(value.tree)) return value.tree;
-    if (value?.nodes && Array.isArray(value.nodes)) return value.nodes;
-    if (value?.results && Array.isArray(value.results)) return value.results;
+    if (!value || typeof value !== 'object') return [];
+    
+    // Проверяем известные ключи
+    const keysToTry = [key, 'items', 'data', 'candidates', 'visions', 'work_items', 'tree', 'nodes', 'results', 'agents', 'transitions', 'workers', 'clusters', 'policies', 'proposals'];
+    for (const k of keysToTry) {
+      if (k && Array.isArray(value[k])) return value[k];
+    }
+    
     // Если ничего не подошло — пустой массив
-    console.warn('[Store] API вернул не массив:', value);
+    console.warn('[Store] API вернул не массив:', key, value);
     return [];
   },
 
