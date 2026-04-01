@@ -354,6 +354,59 @@ export function HRComponent(container) {
   return () => { if (unsubscribe) unsubscribe(); };
 }
 
+// ═══════════════════════════════════════════════════════
+// FAILURES COMPONENT
+// ═══════════════════════════════════════════════════════
+
+export function FailuresComponent(container) {
+  let unsubscribe = null;
+
+  function subscribeToStore() {
+    unsubscribe = subscribe((state) => {
+      if (state.activePage === 'failures') {
+        render(state.failures);
+      }
+    });
+  }
+
+  function render(failures) {
+    if (!container) return;
+
+    const items = failures?.items ?? (Array.isArray(failures) ? failures : []);
+
+    container.innerHTML = `
+      <div class="page-header" style="margin-bottom:var(--space-4)">
+        <div class="page-title">Кластеры сбоев</div>
+        <div class="page-sub">Паттерны ошибок, сгруппированные по типу</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-header-icon">◈</span> Failure Clusters</div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>Pattern</th><th>Count</th><th>Last seen</th><th>Status</th></tr></thead>
+            <tbody>
+              ${!items || items.length === 0 ? `
+                <tr><td colspan="5" style="padding:40px;text-align:center;color:var(--text-muted)">Нет кластеров сбоев</td></tr>
+              ` : items.map(f => `
+                <tr>
+                  <td class="mono-id">${escapeHtml(f.id?.slice(0,8) || '')}...</td>
+                  <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(f.pattern || f.title || '—')}</td>
+                  <td class="mono-id">${f.count || 1}</td>
+                  <td class="mono-id" style="font-size:10px;color:var(--text-faint)">${formatTime(f.last_seen || f.created_at)}</td>
+                  <td><span class="badge s-${f.status === 'resolved' ? 'done' : 'failed'}">${escapeHtml(f.status || 'active')}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  subscribeToStore();
+  return () => { if (unsubscribe) unsubscribe(); };
+}
+
 // Helpers
 function getPriorityColor(score) {
   if (score > 0.7) return 'var(--error)';

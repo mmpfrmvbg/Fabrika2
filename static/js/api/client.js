@@ -239,6 +239,10 @@ export const api = {
     return fetchJson('/api/hr');
   },
 
+  async getFailures() {
+    return fetchJson('/api/failures');
+  },
+
   // ── Improvements ─────────────────────────────────────
   async getImprovements() {
     return fetchJson('/api/improvements');

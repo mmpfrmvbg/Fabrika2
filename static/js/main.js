@@ -11,7 +11,7 @@ import { DashboardComponent } from './components/Dashboard.js';
 import { AnalyticsComponent } from './components/Analytics.js';
 import { ForgeComponent } from './components/Forge.js';
 import { FSMComponent } from './components/FSM.js';
-import { AgentsComponent, ImprovementsComponent, JudgementsComponent, HRComponent } from './components/Others.js';
+import { AgentsComponent, ImprovementsComponent, JudgementsComponent, HRComponent, FailuresComponent } from './components/Others.js';
 import { api } from './api/client.js';
 
 // ═══════════════════════════════════════════════════════
@@ -59,6 +59,9 @@ function initComponents() {
   const hrContainer = document.getElementById('page-hr');
   if (hrContainer) componentCleanup.hr = HRComponent(hrContainer);
 
+  const failuresContainer = document.getElementById('page-failures');
+  if (failuresContainer) componentCleanup.failures = FailuresComponent(failuresContainer);
+
   window.toggleChat = () => {
     const workItemId = store.state.selectedWorkItemId;
     if (store.state.chat.isOpen) store.closeChat();
@@ -82,7 +85,8 @@ async function loadInitialData() {
       store.loadAgents(),
       store.loadFsm(),
       store.loadImprovements(),
-      store.loadHR()
+      store.loadHR(),
+      store.loadFailures()
     ]);
     console.log('[Factory] Initial data loaded');
   } catch (error) {
@@ -160,6 +164,7 @@ async function loadPageData(pageName) {
     case 'analytics': await store.loadAnalytics('24h'); break;
     case 'improvements': await store.loadImprovements(); break;
     case 'hr': await store.loadHR(); break;
+    case 'failures': await store.loadFailures(); break;
   }
 }
 

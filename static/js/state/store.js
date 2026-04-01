@@ -264,6 +264,18 @@ export const store = {
       console.error('[Store] Failed to load HR:', error);
     }
   },
+
+  /**
+   * Загрузить failure clusters
+   */
+  async loadFailures() {
+    try {
+      const failures = await api.getFailures();
+      this.update({ failures });
+    } catch (error) {
+      console.error('[Store] Failed to load failures:', error);
+    }
+  },
   
   /**
    * Выбрать work item
