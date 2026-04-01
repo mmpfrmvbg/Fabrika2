@@ -52,21 +52,6 @@ load_dotenv()
 
 app = FastAPI(title="Factory read-only API", version="1.0")
 
-# ═══════════════════════════════════════════════════════
-# CORS - разрешаем запросы с localhost:8080
-# ═══════════════════════════════════════════════════════
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8080",
-        "http://127.0.0.1:8080",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 
 async def require_api_key(request: Request) -> None:
     """Если задан ``FACTORY_API_KEY``, мутирующие эндпоинты требуют заголовок ``X-API-Key``."""
