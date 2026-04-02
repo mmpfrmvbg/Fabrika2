@@ -335,6 +335,11 @@ window.toggleFactoryPause = () => {
   const status = window.factoryPaused ? 'paused' : 'running';
   showFactoryToast(`Фабрика ${window.factoryPaused ? 'на паузе' : 'продолжает работу'}`, 'ok');
   
+  // Сохранение в localStorage
+  if (window.Storage && window.StorageKeys) {
+    window.Storage.set(window.StorageKeys.PAUSED, window.factoryPaused);
+  }
+  
   // TODO: API вызов для паузы/продолжения
   // await api.pauseFactory(status);
 };
@@ -364,7 +369,26 @@ window.switchToDeveloperMode = () => {
   document.getElementById('page-dashboard')?.classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('nav-dashboard')?.classList.add('active');
+  
+  // Сохранение в localStorage
+  if (window.Storage && window.StorageKeys) {
+    window.Storage.set(window.StorageKeys.MODE, 'developer');
+  }
+  
   showFactoryToast('Режим разработчика включён', 'ok');
+};
+
+window.switchToAutonomousMode = () => {
+  store.update({ activePage: 'autonomous' });
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-autonomous')?.classList.add('active');
+  
+  // Сохранение в localStorage
+  if (window.Storage && window.StorageKeys) {
+    window.Storage.set(window.StorageKeys.MODE, 'autonomous');
+  }
+  
+  showFactoryToast('Автономный режим включён', 'ok');
 };
 
 function showFactoryToast(message, kind = 'ok') {

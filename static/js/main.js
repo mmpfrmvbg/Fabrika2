@@ -17,6 +17,8 @@ import { ChildTaskModalComponent } from './components/ChildTaskModal.js';
 import { SidebarTreeComponent } from './components/SidebarTree.js';
 import { AutonomousModeComponent } from './components/AutonomousMode.js';
 import { VisionCreatorComponent } from './components/VisionCreator.js';
+import { autoLaunchVision, stopAutoLaunch } from './autonomous/autoLaunch.js';
+import { Storage, StorageKeys, initializeStorage } from './storage.js';
 import { api } from './api/client.js';
 
 // ═══════════════════════════════════════════════════════
@@ -742,9 +744,25 @@ function safeRender(fn, fallbackMessage = 'Ошибка рендеринга') {
 
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('[Factory] Initializing...');
+  
+  // Инициализация хранилища
+  initializeStorage();
+  
+  // Загрузка предпочтений
+  const mode = Storage.get(StorageKeys.MODE, 'autonomous');
+  const paused = Storage.get(StorageKeys.PAUSED, false);
+  window.factoryPaused = paused;
+  
   initComponents();
   await loadInitialData();
   renderAll();
+  
+  // Переключение в сохранённый режим
+  if (mode === 'developer') {
+    window.switchToDeveloperMode();
+  } else {
+    window.switchToAutonomousMode();
+  }
 
   // ═══════════════════════════════════════════════════════
   // KEYBOARD SHORTCUTS
@@ -767,6 +785,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       window.closeJournalDetail?.();
       window.closeVisionModal?.();
       window.closeChildTaskModal?.();
+      window.closeVisionCreator?.();
       store.closeChat?.();
       
       const detailPanel = document.getElementById('detail-panel');
