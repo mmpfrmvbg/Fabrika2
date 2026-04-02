@@ -19,3 +19,5 @@ logger/
 
 factory_core.py
 osnova-architecture.html
+
+server.log
