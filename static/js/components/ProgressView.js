@@ -155,11 +155,11 @@ export function ProgressViewComponent(container) {
     const descendants = getAllDescendants(visionId, workItems);
     const atoms = descendants.filter(d => d.kind === 'atom');
     
-    // Статусы для каждого этапа
+    // Статусы для каждого этапа (без дубликатов)
     const stageStatuses = {
       planning: ['draft', 'planned', 'ready_for_judge'],
       forge: ['ready_for_work', 'in_progress', 'forge_started'],
-      review: ['in_review', 'forge_completed', 'in_review'],
+      review: ['in_review', 'forge_completed'],
       judge: ['ready_for_judge', 'judge_rejected', 'review_rejected']
     };
     
