@@ -12,6 +12,8 @@ import { AnalyticsComponent } from './components/Analytics.js';
 import { ForgeComponent } from './components/Forge.js';
 import { FSMComponent } from './components/FSM.js';
 import { AgentsComponent, ImprovementsComponent, JudgementsComponent, HRComponent, FailuresComponent } from './components/Others.js';
+import { DetailPanelComponent } from './components/DetailPanel.js';
+import { ChildTaskModalComponent } from './components/ChildTaskModal.js';
 import { api } from './api/client.js';
 
 // ═══════════════════════════════════════════════════════
@@ -28,31 +30,31 @@ let componentCleanup = {};
 function initComponents() {
   const chatPanel = document.getElementById('chat-panel');
   if (chatPanel) componentCleanup.chat = ChatComponent(chatPanel);
-  
+
   const treeRoot = document.getElementById('task-tree-root');
   if (treeRoot) componentCleanup.tree = TreeComponent(treeRoot);
-  
+
   const logEntries = document.getElementById('log-entries');
   if (logEntries) componentCleanup.journal = JournalComponent(logEntries);
-  
+
   const dashboardContainer = document.getElementById('page-dashboard');
   if (dashboardContainer) componentCleanup.dashboard = DashboardComponent(dashboardContainer);
-  
+
   const analyticsContainer = document.getElementById('page-analytics');
   if (analyticsContainer) componentCleanup.analytics = AnalyticsComponent(analyticsContainer);
-  
+
   const forgeContainer = document.getElementById('forge-queue-list');
   if (forgeContainer) componentCleanup.forge = ForgeComponent(forgeContainer);
-  
+
   const fsmContainer = document.getElementById('page-fsm');
   if (fsmContainer) componentCleanup.fsm = FSMComponent(fsmContainer);
-  
+
   const agentsContainer = document.getElementById('agents-grid');
   if (agentsContainer) componentCleanup.agents = AgentsComponent(agentsContainer);
-  
+
   const improvementsContainer = document.getElementById('page-improvements');
   if (improvementsContainer) componentCleanup.improvements = ImprovementsComponent(improvementsContainer);
-  
+
   const judgementsContainer = document.getElementById('page-judgements');
   if (judgementsContainer) componentCleanup.judgements = JudgementsComponent(judgementsContainer);
 
@@ -61,6 +63,14 @@ function initComponents() {
 
   const failuresContainer = document.getElementById('page-failures');
   if (failuresContainer) componentCleanup.failures = FailuresComponent(failuresContainer);
+
+  // Detail Panel
+  const detailPanel = document.getElementById('detail-panel');
+  if (detailPanel) componentCleanup.detail = DetailPanelComponent(detailPanel);
+
+  // Child Task Modal
+  const childTaskModal = document.getElementById('child-task-modal');
+  if (childTaskModal) componentCleanup.childTask = ChildTaskModalComponent(childTaskModal);
 
   window.toggleChat = () => {
     const workItemId = store.state.selectedWorkItemId;
@@ -262,26 +272,105 @@ window.submitNewVision = async () => {
 };
 
 window.openChildTaskModal = (parentId, childKind) => {
-  console.log('openChildTaskModal', parentId, childKind);
-  showFactoryToast('Создание задачи: ' + childKind, 'ok');
+  // Используем компонент из ChildTaskModal.js
+  const container = document.getElementById('child-task-modal');
+  if (container && window.openChildTaskModalFromComponent) {
+    window.openChildTaskModalFromComponent(parentId, childKind);
+  }
 };
 
-window.closeChildTaskModal = () => { console.log('closeChildTaskModal'); };
-window.submitChildTaskModal = async () => { showFactoryToast('TODO: создать задачу', 'ok'); };
+// ═══════════════════════════════════════════════════════
+// ROUTER CONTEXT (Task Tree -> Log + Forge + FSM filter)
+// ═══════════════════════════════════════════════════════
+
+window.selectWorkItemFromTree = async (id) => {
+  // Выбрать work item и открыть detail panel
+  store.selectWorkItem(id);
+  updateRouterContextBars();
+  renderTree();
+  renderForge();
+  renderFsm();
+  renderLog();
+};
+
+window.clearRouter = () => {
+  store.selectWorkItem(null);
+  updateRouterContextBars();
+  renderTree();
+  renderForge();
+  renderFsm();
+  renderLog();
+  showFactoryToast('Контекст сброшен', 'ok');
+};
+
+function updateRouterContextBars() {
+  const selectedId = store.state.selectedWorkItemId;
+  const wi = store.state.workItems.find(w => w.id === selectedId);
+  const title = wi ? (wi.title || wi.label || selectedId) : '—';
+  
+  const targets = [
+    { wrap: 'router-context-log', title: 'router-context-log-title' },
+    { wrap: 'router-context-fsm', title: 'router-context-fsm-title' },
+    { wrap: 'router-context-forge', title: 'router-context-forge-title' }
+  ];
+  
+  targets.forEach(t => {
+    const wrapEl = document.getElementById(t.wrap);
+    const titleEl = document.getElementById(t.title);
+    if (wrapEl && titleEl) {
+      if (selectedId) {
+        titleEl.textContent = title;
+        wrapEl.style.display = 'flex';
+      } else {
+        wrapEl.style.display = 'none';
+      }
+    }
+  });
+  
+  // Обновляем chip в header если есть
+  const chipEl = document.getElementById('router-chip');
+  if (chipEl) {
+    chipEl.textContent = selectedId ? `Router: ${selectedId.slice(0, 8)}...` : 'Router: —';
+  }
+}
+
+function descendantIds(rootId) {
+  const out = new Set();
+  const walk = (id) => {
+    out.add(id);
+    const children = store.state.workItems.filter(w => w.parent_id === id);
+    children.forEach(ch => walk(ch.id));
+  };
+  walk(rootId);
+  return out;
+}
+
+function entityInRouterScope(entityId, scopeIds) {
+  if (!scopeIds || entityId == null || entityId === '') return false;
+  const eid = String(entityId);
+  if (scopeIds.has(eid)) return true;
+  
+  // Проверяем run_id
+  if (eid.startsWith('run_')) {
+    // TODO: загрузить runs и проверить work_item_id
+    return false;
+  }
+  
+  return false;
+}
 
 // ═══════════════════════════════════════════════════════
 // DETAIL PANEL
 // ═══════════════════════════════════════════════════════
 
 window.openDetail = (workItem) => {
-  console.log('openDetail', workItem);
   store.selectWorkItem(workItem?.id);
-  showFactoryToast('Детали: ' + workItem?.title, 'ok');
+  updateRouterContextBars();
 };
 
 window.closeDetail = () => {
-  const panel = document.getElementById('detail-panel');
-  if (panel) panel.classList.remove('open');
+  store.selectWorkItem(null);
+  updateRouterContextBars();
 };
 
 window.startDetailTitleEdit = () => { showFactoryToast('Редактирование', 'ok'); };
@@ -378,6 +467,9 @@ function showFactoryToast(message, kind = 'ok') {
   clearTimeout(el._hideT);
   el._hideT = setTimeout(() => { el.classList.remove('visible'); }, 3000);
 }
+
+// Глобальный экспорт для компонентов
+window.showFactoryToast = showFactoryToast;
 
 // ═══════════════════════════════════════════════════════
 // HELPERS

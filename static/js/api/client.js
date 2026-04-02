@@ -7,8 +7,10 @@
 // CONFIG
 // ═══════════════════════════════════════════════════════
 
-// API сервер всегда на 8000 порту (python -m factory.api_server)
-const API_BASE = 'http://127.0.0.1:8000';
+// API_BASE: window.FACTORY_API_BASE → data-api-base на html → default
+const API_BASE = window.FACTORY_API_BASE || 
+                 document.documentElement.getAttribute('data-api-base') || 
+                 'http://127.0.0.1:8000';
 
 // ═══════════════════════════════════════════════════════
 // HEADERS
@@ -128,6 +130,47 @@ export const api = {
   
   async getWorkItemEvents(id) {
     return fetchJson(`/api/work-items/${id}/events`);
+  },
+
+  // ── Judgements / Failures ────────────────────────────
+  async getJudgements(params = {}) {
+    const url = new URL('/api/judgements', API_BASE);
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== null && v !== undefined) {
+        url.searchParams.set(k, v);
+      }
+    });
+    return fetchJson(url.toString());
+  },
+
+  async getFailures(params = {}) {
+    const url = new URL('/api/failures', API_BASE);
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== null && v !== undefined) {
+        url.searchParams.set(k, v);
+      }
+    });
+    return fetchJson(url.toString());
+  },
+
+  async getFailureClusters(params = {}) {
+    const url = new URL('/api/failure-clusters', API_BASE);
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== null && v !== undefined) {
+        url.searchParams.set(k, v);
+      }
+    });
+    return fetchJson(url.toString());
+  },
+
+  // ── Bulk Operations ──────────────────────────────────
+  async bulkArchive(data = {}) {
+    return fetchJsonPost('/api/bulk/archive', data);
+  },
+
+  // ── Work Item Patch ─────────────────────────────────
+  async patchWorkItem(id, data = {}) {
+    return fetchJsonPatch(`/api/work-items/${id}`, data);
   },
   
   // ── Runs ─────────────────────────────────────────────

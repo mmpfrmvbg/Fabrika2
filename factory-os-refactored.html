@@ -50,6 +50,8 @@
     <div style="width:1px;height:14px;background:var(--border)"></div>
     <span id="worker-mode-pill" class="api-pill">✋ Manual</span>
     <div style="width:1px;height:14px;background:var(--border)"></div>
+    <span id="router-chip" class="api-pill" title="Выбор из Task Tree — фильтр лога и очереди">Router: —</span>
+    <div style="width:1px;height:14px;background:var(--border)"></div>
     <div class="orch-menu-wrap">
       <button type="button" class="orch-menu-btn" id="orch-menu-btn" onclick="toggleOrchestratorMenu(event)">⚙ Оркестратор ▾</button>
       <div class="orch-dropdown" id="orch-dropdown">
@@ -122,9 +124,13 @@
     <div class="page-header">
       <div class="page-title">Журнал событий</div>
     </div>
+    <div class="router-context-bar" id="router-context-log" style="display:none;">
+      <span><span title="Активен контекст Router">🔗</span> Контекст: <span class="rcb-title" id="router-context-log-title">—</span></span>
+      <span class="rcb-link" onclick="clearRouter()">✕ Сбросить</span>
+    </div>
     <div id="log-entries"></div>
   </div>
-  
+
   <!-- ANALYTICS PAGE -->
   <div class="page" id="page-analytics">
     <div class="page-header">
@@ -145,6 +151,10 @@
     <div class="page-header">
       <div class="page-title">Очередь Forge</div>
     </div>
+    <div class="router-context-bar" id="router-context-forge" style="display:none;">
+      <span><span title="Активен контекст Router">🔗</span> Контекст: <span class="rcb-title" id="router-context-forge-title">—</span></span>
+      <span class="rcb-link" onclick="clearRouter()">✕ Сбросить</span>
+    </div>
     <div id="forge-queue-list"></div>
   </div>
 
@@ -152,6 +162,10 @@
   <div class="page" id="page-fsm">
     <div class="page-header">
       <div class="page-title">FSM (State Machine)</div>
+    </div>
+    <div class="router-context-bar" id="router-context-fsm" style="display:none;">
+      <span><span title="Активен контекст Router">🔗</span> Контекст: <span class="rcb-title" id="router-context-fsm-title">—</span></span>
+      <span class="rcb-link" onclick="clearRouter()">✕ Сбросить</span>
     </div>
   </div>
 
@@ -194,6 +208,32 @@
 
 <!-- CHAT PANEL -->
 <div id="chat-panel" class="chat-panel-container"></div>
+
+<!-- DETAIL PANEL -->
+<div class="detail-panel" id="detail-panel">
+  <!-- Контент рендерится через DetailPanelComponent -->
+</div>
+
+<!-- CHILD TASK MODAL -->
+<div id="child-task-modal" class="vision-modal-wrap" aria-hidden="true">
+  <!-- Контент рендерится через ChildTaskModalComponent -->
+</div>
+
+<!-- VISION MODAL -->
+<div id="vision-modal" class="vision-modal-wrap" aria-hidden="true">
+  <div class="vision-modal-backdrop" onclick="closeVisionModal()"></div>
+  <div class="vision-modal-card card" style="padding:var(--space-4)">
+    <div style="font-weight:600;margin-bottom:var(--space-3)">Новый Vision</div>
+    <label style="display:block;font-size:var(--text-xs);color:var(--text-muted);margin-bottom:4px">Заголовок *</label>
+    <input id="vision-modal-title" type="text" style="width:100%;margin-bottom:var(--space-3);padding:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);color:var(--text)" placeholder="Введите заголовок Vision..." />
+    <label style="display:block;font-size:var(--text-xs);color:var(--text-muted);margin-bottom:4px">Описание</label>
+    <textarea id="vision-modal-desc" rows="4" style="width:100%;margin-bottom:var(--space-3);padding:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);color:var(--text);resize:vertical" placeholder="Описание (опционально)"></textarea>
+    <div style="display:flex;gap:var(--space-2);justify-content:flex-end">
+      <button type="button" onclick="closeVisionModal()" style="padding:8px 14px;background:var(--surface-3);border:1px solid var(--border);border-radius:var(--radius-md);cursor:pointer;color:var(--text-muted)">Отмена</button>
+      <button type="button" onclick="submitNewVision()" style="padding:8px 14px;background:var(--primary-dim);border:1px solid var(--primary);color:var(--primary);border-radius:var(--radius-md);cursor:pointer">Создать</button>
+    </div>
+  </div>
+</div>
 
 <!-- Main JS Module -->
 <script type="module" src="/static/js/main.js"></script>
