@@ -19,6 +19,7 @@ import { AutonomousModeComponent } from './components/AutonomousMode.js';
 import { VisionCreatorComponent } from './components/VisionCreator.js';
 import { autoLaunchVision, stopAutoLaunch } from './autonomous/autoLaunch.js';
 import { Storage, StorageKeys, initializeStorage } from './storage.js';
+import { escapeHtml, formatTime, showFactoryToast, getStatusLabel, isEmpty, getSafe } from './utils/helpers.js';
 import { api } from './api/client.js';
 
 // ═══════════════════════════════════════════════════════
@@ -391,7 +392,7 @@ window.clearRouter = () => {
 
 function updateRouterContextBars() {
   const selectedId = store.state.selectedWorkItemId;
-  const wi = store.state.workItems.find(w => w.id === selectedId);
+  const wi = store.state.workItems?.find(w => w.id === selectedId);
   const title = wi ? (wi.title || wi.label || selectedId) : '—';
   
   const targets = [
@@ -525,7 +526,7 @@ window.runWorkItemFromTree = async (wiId) => {
     
     // Обновить detail panel если открыта
     if (store.state.selectedWorkItemId === wiId && window.openDetail) {
-      const wi = store.state.workItems.find(w => w.id === wiId);
+      const wi = store.state.workItems?.find(w => w.id === wiId);
       if (wi) window.openDetail(wi);
     }
     
@@ -733,16 +734,8 @@ window.closeOrchestratorMenu = () => {
 // TOAST NOTIFICATIONS
 // ═══════════════════════════════════════════════════════
 
-function showFactoryToast(message, kind = 'ok') {
-  const el = document.getElementById('factory-toast');
-  if (!el) return;
-  el.textContent = message;
-  el.className = 'factory-toast visible ' + (kind === 'err' ? 'err' : 'ok');
-  clearTimeout(el._hideT);
-  el._hideT = setTimeout(() => { el.classList.remove('visible'); }, 3000);
-}
-
-// Глобальный экспорт для компонентов
+// showFactoryToast импортируется из utils/helpers.js
+// Глобальный экспорт:
 window.showFactoryToast = showFactoryToast;
 
 window.openVisionCreator = () => {
@@ -764,17 +757,8 @@ window.factoryPaused = false;
 // HELPERS
 // ═══════════════════════════════════════════════════════
 
-function formatTime(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-}
-
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+// Helpers импортируются из utils/helpers.js
+// escapeHtml, formatTime, showFactoryToast
 
 // ═══════════════════════════════════════════════════════
 // ERROR BOUNDARIES

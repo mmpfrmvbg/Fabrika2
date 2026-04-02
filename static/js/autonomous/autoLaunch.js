@@ -140,13 +140,17 @@ async function monitorQueueProgress() {
  * Обработка завершения атома
  */
 async function handleAtomCompletion(atomId) {
-  console.log('[AutoLaunch] Atom completed:', atomId);
-  
-  // Обновление очереди
-  launchState.queue = updateQueueAfterCompletion(launchState.queue, atomId);
-  
-  // Запуск следующего атома
-  await launchNextAtom();
+  try {
+    console.log('[AutoLaunch] Atom completed:', atomId);
+
+    // Обновление очереди
+    launchState.queue = updateQueueAfterCompletion(launchState.queue, atomId);
+
+    // Запуск следующего атома
+    await launchNextAtom();
+  } catch (error) {
+    console.error('[AutoLaunch] handleAtomCompletion error:', error);
+  }
 }
 
 /**
