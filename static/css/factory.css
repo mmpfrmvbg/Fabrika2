@@ -1037,6 +1037,18 @@ button.btn-dash-run:disabled { opacity: 0.45; cursor: not-allowed; }
   background: var(--primary-dim);
 }
 
+/* Sidebar tree nodes */
+.sidebar-tree-node.selected {
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--border));
+}
+
+.sidebar-tree-node:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
 /* ═══════════════════════════════════════════════════════
    ADDITIONAL COMPONENT STYLES
    ═══════════════════════════════════════════════════════ */

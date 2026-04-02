@@ -4,6 +4,7 @@
  */
 
 import { store, subscribe } from '../state/store.js';
+import { debounce } from '../utils/debounce.js';
 
 const PAGE_SIZE = 100;
 let currentPage = 0;
@@ -158,11 +159,11 @@ export function JournalComponent(container) {
     render(journal);
   };
   
-  window.filterLog = () => {
-    // TODO: поиск по тексту
+  window.filterLog = debounce(() => {
+    // Поиск по тексту
     const { journal } = store.state;
     render(journal);
-  };
+  }, 300);
   
   window.showJournalDetail = (entry) => {
     const detailPane = document.getElementById('journal-detail-pane');

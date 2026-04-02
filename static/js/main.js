@@ -14,6 +14,7 @@ import { FSMComponent } from './components/FSM.js';
 import { AgentsComponent, ImprovementsComponent, JudgementsComponent, HRComponent, FailuresComponent } from './components/Others.js';
 import { DetailPanelComponent } from './components/DetailPanel.js';
 import { ChildTaskModalComponent } from './components/ChildTaskModal.js';
+import { SidebarTreeComponent } from './components/SidebarTree.js';
 import { api } from './api/client.js';
 
 // ═══════════════════════════════════════════════════════
@@ -71,6 +72,10 @@ function initComponents() {
   // Child Task Modal
   const childTaskModal = document.getElementById('child-task-modal');
   if (childTaskModal) componentCleanup.childTask = ChildTaskModalComponent(childTaskModal);
+
+  // Sidebar Quick Jump
+  const sidebarTreeRoot = document.getElementById('sidebar-tree-root');
+  if (sidebarTreeRoot) componentCleanup.sidebarTree = SidebarTreeComponent(sidebarTreeRoot);
 
   window.toggleChat = () => {
     const workItemId = store.state.selectedWorkItemId;
@@ -651,6 +656,31 @@ function escapeHtml(text) {
 }
 
 // ═══════════════════════════════════════════════════════
+// ERROR BOUNDARIES
+// ═══════════════════════════════════════════════════════
+
+/**
+ * Безопасный рендеринг с обработкой ошибок
+ * @param {Function} fn - функция рендеринга
+ * @param {string} fallbackMessage - сообщение об ошибке
+ * @returns {string} HTML или fallback
+ */
+function safeRender(fn, fallbackMessage = 'Ошибка рендеринга') {
+  try {
+    return fn();
+  } catch (error) {
+    console.error('[Render Error]', error);
+    return `
+      <div style="padding:20px;color:var(--error);background:var(--error-dim);border:1px solid var(--error);border-radius:var(--radius-md)">
+        <div style="font-weight:600;margin-bottom:8px">⚠️ ${escapeHtml(fallbackMessage)}</div>
+        <pre style="margin:0;padding:10px;background:var(--surface-2);border-radius:var(--radius-sm);font-size:10px;white-space:pre-wrap;overflow:auto;max-height:200px;color:var(--text-muted)">${escapeHtml(error.message)}</pre>
+        <button type="button" onclick="window.location.reload()" style="margin-top:12px;padding:6px 12px;background:var(--error);color:white;border:none;border-radius:var(--radius-sm);cursor:pointer;font-size:12px">Перезагрузить</button>
+      </div>
+    `;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════
 
@@ -659,7 +689,57 @@ document.addEventListener('DOMContentLoaded', async () => {
   initComponents();
   await loadInitialData();
   renderAll();
+
+  // ═══════════════════════════════════════════════════════
+  // KEYBOARD SHORTCUTS
+  // ═══════════════════════════════════════════════════════
   
+  document.addEventListener('keydown', (e) => {
+    // Ctrl+K → фокус на поиск журнала
+    if (e.ctrlKey && e.key === 'k') {
+      e.preventDefault();
+      const searchInput = document.getElementById('log-search');
+      if (searchInput) {
+        searchInput.focus();
+        showFactoryToast('Фокус на поиск журнала', 'ok');
+      }
+    }
+    
+    // Escape → закрыть modal/panel/chat
+    if (e.key === 'Escape') {
+      window.closeDetail?.();
+      window.closeJournalDetail?.();
+      window.closeVisionModal?.();
+      window.closeChildTaskModal?.();
+      store.closeChat?.();
+      
+      const detailPanel = document.getElementById('detail-panel');
+      if (detailPanel && detailPanel.classList.contains('open')) {
+        detailPanel.classList.remove('open');
+        store.selectWorkItem(null);
+      }
+    }
+    
+    // ? → показать shortcuts help (если не в input)
+    if (e.key === '?' && !e.ctrlKey && !e.metaKey && !['INPUT', 'TEXTAREA'].includes(e.target.tagName)) {
+      e.preventDefault();
+      showShortcutsHelp();
+    }
+    
+    // Ctrl+Enter → отправить форму (Vision, Child Task)
+    if (e.ctrlKey && e.key === 'Enter') {
+      const visionModal = document.getElementById('vision-modal');
+      const childModal = document.getElementById('child-task-modal');
+      
+      if (visionModal && visionModal.classList.contains('open')) {
+        window.submitNewVision?.();
+      } else if (childModal && childModal.classList.contains('open')) {
+        window.submitChildTaskModal?.();
+      }
+    }
+  });
+  
+  // Polling
   setInterval(async () => {
     try {
       await Promise.all([store.loadJournal(), store.loadOrchestratorStatus(), store.loadWorkersStatus()]);
@@ -670,9 +750,41 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.error('[Factory] Polling error:', error);
     }
   }, 5000);
-  
+
   console.log('[Factory] Initialized');
 });
+
+// ═══════════════════════════════════════════════════════
+// SHORTCUTS HELP
+// ═══════════════════════════════════════════════════════
+
+function showShortcutsHelp() {
+  const helpHtml = `
+    <div style="position:fixed;inset:0;z-index:400;display:flex;align-items:center;justify-content:center">
+      <div class="vision-modal-backdrop" onclick="this.parentElement.remove()"></div>
+      <div class="vision-modal-card card" style="padding:var(--space-4);max-width:420px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-3)">
+          <div style="font-weight:600;font-size:var(--text-base)">⌨️ Горячие клавиши</div>
+          <button type="button" onclick="this.closest('.vision-modal-wrap')?.remove()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px">×</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2);font-size:var(--text-sm)">
+          <div style="display:flex;align-items:center;gap:8px"><kbd style="padding:2px 6px;background:var(--surface-3);border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:10px">Ctrl+K</kbd> Поиск</div>
+          <div style="display:flex;align-items:center;gap:8px"><kbd style="padding:2px 6px;background:var(--surface-3);border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:10px">Escape</kbd> Закрыть</div>
+          <div style="display:flex;align-items:center;gap:8px"><kbd style="padding:2px 6px;background:var(--surface-3);border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:10px">?</kbd> Помощь</div>
+          <div style="display:flex;align-items:center;gap:8px"><kbd style="padding:2px 6px;background:var(--surface-3);border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:10px">Ctrl+↵</kbd> Отправить</div>
+        </div>
+        <div style="margin-top:var(--space-3);padding-top:var(--space-3);border-top:1px solid var(--border);font-size:10px;color:var(--text-faint)">
+          Нажмите <kbd style="font-family:var(--font-mono)">Escape</kbd> или кликните вне окна для закрытия
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Создаём временный контейнер
+  const container = document.createElement('div');
+  container.innerHTML = helpHtml;
+  document.body.appendChild(container);
+}
 
 // ═══════════════════════════════════════════════════════
 // CLEANUP
