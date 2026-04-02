@@ -178,26 +178,29 @@ export function ProgressViewComponent(container) {
   function calculateSmartETA(visionId) {
     const now = Date.now();
     
-    // Проверка кэша (обновляем каждые 30 секунд)
-    if (etaCache.visionId === visionId && (now - etaCache.timestamp) < 30000) {
-      return etaCache.value;
-    }
-    
+    // Получаем текущий прогресс для проверки инвалидации
     const workItems = store.state.workItems || [];
     const descendants = getAllDescendants(visionId, workItems);
     const atoms = descendants.filter(d => d.kind === 'atom');
-    
     const total = atoms.length;
     const done = atoms.filter(a => a.status === 'done' || a.status === 'archived').length;
-    const progress = total ? (done / total) : 0;
+    const currentProgress = total ? (done / total) : 0;
     
-    if (progress >= 1) {
-      etaCache = { visionId, value: 'Завершено', timestamp: now };
+    // Проверка кэша (обновляем каждые 30 секунд ИЛИ при изменении прогресса)
+    const progressChanged = etaCache.visionId === visionId && 
+                           etaCache.progress !== currentProgress;
+    
+    if (etaCache.visionId === visionId && !progressChanged && (now - etaCache.timestamp) < 30000) {
+      return etaCache.value;
+    }
+    
+    if (currentProgress >= 1) {
+      etaCache = { visionId, value: 'Завершено', timestamp: now, progress: currentProgress };
       return 'Завершено';
     }
     
-    if (progress < 0.05) {
-      etaCache = { visionId, value: 'Расчёт...', timestamp: now };
+    if (currentProgress < 0.05) {
+      etaCache = { visionId, value: 'Расчёт...', timestamp: now, progress: currentProgress };
       return 'Расчёт...';
     }
     
@@ -208,15 +211,15 @@ export function ProgressViewComponent(container) {
     const vision = store.state.visions?.visions?.find(v => v.id === visionId);
     const startTime = vision?.created_at ? new Date(vision.created_at).getTime() : now;
     const elapsed = now - startTime;
-    const predictedTotal = elapsed / progress;
+    const predictedTotal = elapsed / currentProgress;
     const remaining = predictedTotal - elapsed;
     
     // 3. Минимум из двух оценок
-    const eta = Math.min(avgTimeMs * (1 - progress), remaining);
+    const eta = Math.min(avgTimeMs * (1 - currentProgress), remaining);
     
     // Форматирование
     const formatted = formatDuration(Math.max(0, eta));
-    etaCache = { visionId, value: formatted, timestamp: now };
+    etaCache = { visionId, value: formatted, timestamp: now, progress: currentProgress };
     
     return formatted;
   }

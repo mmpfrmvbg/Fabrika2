@@ -17,11 +17,13 @@ export function EscalationViewComponent(container, error) {
     if (!container) return;
     
     if (!isOpen) {
-      container.style.display = 'none';
+      container.classList.remove('open');
+      container.setAttribute('aria-hidden', 'true');
       return;
     }
     
-    container.style.display = 'flex';
+    container.classList.add('open');
+    container.setAttribute('aria-hidden', 'false');
     container.innerHTML = `
       <div class="ev-backdrop" onclick="window.closeEscalationModal()"></div>
       <div class="ev-modal-card">

@@ -4,6 +4,7 @@
  */
 
 import { api } from '../api/client.js';
+import { debounce } from '../utils/debounce.js';
 
 // Состояние компонента
 let isEstimating = false;
@@ -246,11 +247,11 @@ window.submitVision = () => {
   }
 };
 
-window.onVisionTitleChange = () => {
+window.onVisionTitleChange = debounce(() => {
   if (visionCreatorInstance && !isEstimating) {
     visionCreatorInstance.estimate();
   }
-};
+}, 500);
 
 function showFactoryToast(message, kind = 'ok') {
   const el = document.getElementById('factory-toast');
