@@ -1812,6 +1812,233 @@ button.btn-dash-run:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 
 /* ═══════════════════════════════════════════════════════
+   ESCALATION VIEW STYLES
+   ═══════════════════════════════════════════════════════ */
+
+.escalation-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.escalation-modal.open {
+  display: flex;
+}
+
+.ev-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.ev-modal-card {
+  position: relative;
+  z-index: 1;
+  max-width: 560px;
+  width: 92vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+}
+
+.ev-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+
+.ev-header-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ev-icon {
+  font-size: 1.5rem;
+}
+
+.ev-header-title h2 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.ev-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--surface-3);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+}
+
+.ev-close-btn:hover {
+  background: var(--error-dim);
+  color: var(--error);
+}
+
+.ev-body {
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ev-error {
+  padding: var(--space-4);
+  background: var(--error-dim);
+  border: 1px solid var(--error);
+  border-radius: var(--radius-md);
+}
+
+.ev-error-type {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--error);
+  margin-bottom: var(--space-2);
+}
+
+.ev-error-message {
+  font-size: var(--text-sm);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.ev-attempts {
+  padding: var(--space-4);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.ev-attempts-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: var(--space-3);
+}
+
+.ev-attempt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+
+.ev-attempt:last-child {
+  margin-bottom: 0;
+}
+
+.ev-attempt.success {
+  background: var(--success-dim);
+  color: var(--success);
+}
+
+.ev-attempt.failed {
+  background: var(--error-dim);
+  color: var(--error);
+}
+
+.ev-suggestion {
+  padding: var(--space-4);
+  background: var(--primary-dim);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-md);
+}
+
+.ev-suggestion-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--primary);
+  margin-bottom: var(--space-2);
+}
+
+.ev-suggestion-text {
+  font-size: var(--text-sm);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.ev-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  padding: var(--space-5);
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.ev-btn-primary {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--primary);
+  background: var(--primary-dim);
+  color: var(--primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.ev-btn-primary:hover {
+  filter: brightness(1.1);
+}
+
+.ev-btn-secondary {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.ev-btn-secondary:hover {
+  border-color: var(--border-2);
+  color: var(--text);
+  background: var(--surface-4);
+}
+
+.ev-btn-danger {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--error);
+  background: var(--error-dim);
+  color: var(--error);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.ev-btn-danger:hover {
+  filter: brightness(1.1);
+}
+
+/* ═══════════════════════════════════════════════════════
    ADDITIONAL COMPONENT STYLES
    ═══════════════════════════════════════════════════════ */
 

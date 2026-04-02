@@ -157,10 +157,10 @@ export function ProgressViewComponent(container) {
     
     // Статусы для каждого этапа
     const stageStatuses = {
-      planning: ['draft', 'planned'],
-      forge: ['ready_for_work', 'in_progress'],
-      review: ['in_review'],
-      judge: ['ready_for_judge', 'judge_rejected']
+      planning: ['draft', 'planned', 'ready_for_judge'],
+      forge: ['ready_for_work', 'in_progress', 'forge_started'],
+      review: ['in_review', 'forge_completed', 'in_review'],
+      judge: ['ready_for_judge', 'judge_rejected', 'review_rejected']
     };
     
     const statuses = stageStatuses[stageKey] || [];

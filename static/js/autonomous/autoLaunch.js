@@ -190,7 +190,10 @@ function stopMonitoring() {
  * Остановка авто-запуска
  */
 export function stopAutoLaunch() {
-  stopMonitoring();
+  if (launchState.monitoringInterval) {
+    clearInterval(launchState.monitoringInterval);
+    launchState.monitoringInterval = null;
+  }
   launchState.isRunning = false;
   launchState.activeVisionId = null;
   launchState.queue = null;
