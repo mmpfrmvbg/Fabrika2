@@ -105,6 +105,12 @@ export function DetailPanelComponent(container) {
           </div>
           <div class="dp-badges-row">
             ${renderBadges(wi)}
+            <button type="button" 
+                    onclick="window.askQwenAboutEntity('work_item', '${wi.id}')"
+                    title="Спросить Qwen про эту задачу"
+                    style="background:var(--primary-dim);border:1px solid var(--primary);color:var(--primary);border-radius:var(--radius-sm);padding:4px 8px;font-size:10px;cursor:pointer;display:flex;align-items:center;gap:4px">
+              💬 Спросить Qwen
+            </button>
           </div>
           <div class="dp-next-action">
             ${renderNextAction(wi)}

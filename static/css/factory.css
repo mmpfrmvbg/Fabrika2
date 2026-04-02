@@ -1049,6 +1049,34 @@ button.btn-dash-run:disabled { opacity: 0.45; cursor: not-allowed; }
   color: var(--text);
 }
 
+/* Ask Qwen button */
+.btn-ask-qwen:hover {
+  background: var(--primary) !important;
+  color: var(--surface) !important;
+}
+
+/* Chat clear context button */
+.chat-clear-context-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--surface-3);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition), color var(--transition);
+  margin-right: 6px;
+}
+
+.chat-clear-context-btn:hover {
+  background: var(--error-dim);
+  color: var(--error);
+}
+
 /* ═══════════════════════════════════════════════════════
    ADDITIONAL COMPONENT STYLES
    ═══════════════════════════════════════════════════════ */

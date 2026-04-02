@@ -33,6 +33,7 @@ export const store = {
       currentChatId: null,
       contextWorkItemId: null,
       context: null,
+      contextEntity: null,  // { type: 'work_item'|'run', id, data }
       streamCleanup: null
     },
 
@@ -308,20 +309,84 @@ export const store = {
   // ═══════════════════════════════════════════════════════
   // CHAT ACTIONS
   // ═══════════════════════════════════════════════════════
-  
+
   /**
    * Открыть чат
    */
   openChat(workItemId = null) {
     const context = workItemId ? this._getWorkItemContext(workItemId) : null;
-    this.update({ 
-      chat: { 
-        ...this.state.chat, 
-        isOpen: true, 
+    this.update({
+      chat: {
+        ...this.state.chat,
+        isOpen: true,
         contextWorkItemId: workItemId,
-        context 
-      } 
+        context,
+        contextEntity: workItemId ? { type: 'work_item', id: workItemId } : null
+      }
     });
+  },
+
+  /**
+   * Установить контекст чата (work_item или run)
+   * @param {string} type - 'work_item' | 'run'
+   * @param {string} id - ID сущности
+   * @param {Object} data - дополнительные данные
+   */
+  setChatContext(type, id, data = {}) {
+    const context = this._getEntityContext(type, id);
+    this.update({
+      chat: {
+        ...this.state.chat,
+        contextEntity: { type, id, data },
+        contextWorkItemId: type === 'work_item' ? id : null,
+        context
+      }
+    });
+  },
+
+  /**
+   * Очистить контекст чата
+   */
+  clearChatContext() {
+    this.update({
+      chat: {
+        ...this.state.chat,
+        contextEntity: null,
+        contextWorkItemId: null,
+        context: null
+      }
+    });
+  },
+
+  /**
+   * Получить контекст для сущности
+   */
+  _getEntityContext(type, id) {
+    if (type === 'work_item') {
+      const wi = this.state.workItems.find(w => w.id === id);
+      if (!wi) return null;
+      return {
+        id: wi.id,
+        kind: wi.kind,
+        title: wi.title,
+        description: wi.description,
+        status: wi.status,
+        parent_id: wi.parent_id,
+        files: wi.files
+      };
+    }
+    if (type === 'run') {
+      const run = this.state.runs.find(r => r.id === id);
+      if (!run) return null;
+      return {
+        id: run.id,
+        work_item_id: run.work_item_id,
+        role: run.role,
+        status: run.status,
+        run_type: run.run_type
+      };
+    }
+    return null;
   },
   
   /**

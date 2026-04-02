@@ -96,6 +96,13 @@ export function TreeComponent(container) {
 
             <div class="tree-meta" onclick="event.stopPropagation()">
               ${node.kind === 'atom' ? renderAtomControls(node) : ''}
+              <button type="button" 
+                      class="btn-ask-qwen" 
+                      onclick="window.askQwenAboutEntity('work_item', '${node.id}')"
+                      title="Спросить Qwen про эту задачу"
+                      style="background:var(--primary-dim);border:1px solid var(--primary);color:var(--primary);border-radius:var(--radius-sm);padding:2px 6px;font-size:9px;cursor:pointer;margin-right:4px">
+                💬
+              </button>
               ${node.kind === 'vision' ? renderVisionPipeline(node) : ''}
               <span class="badge s-${node.status}">
                 <span class="badge-dot"></span>

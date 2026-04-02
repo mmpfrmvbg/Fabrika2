@@ -51,19 +51,31 @@ export function ChatComponent(container) {
   }
   
   function renderChatHTML(chatState) {
-    const { messages, isLoading, contextWorkItemId } = chatState;
+    const { messages, isLoading, contextWorkItemId, contextEntity } = chatState;
     
+    const contextDisplay = contextEntity 
+      ? `${contextEntity.type === 'work_item' ? '📝' : '⚡'} ${contextEntity.type}: ${(contextEntity.data?.title || contextEntity.id || '').slice(0, 20)}...`
+      : contextWorkItemId 
+        ? `Контекст: ${contextWorkItemId.slice(0, 8)}...`
+        : 'Без контекста';
+    
+    const contextTitle = contextEntity?.data?.title 
+      ? ` (${contextEntity.data.kind || 'task'}: ${contextEntity.data.title})`
+      : '';
+
     return `
       <div class="chat-panel">
         <div class="chat-header">
           <div class="chat-title">
             <span class="chat-icon">💬</span>
-            <h3>Chat с Qwen</h3>
-            ${contextWorkItemId ? 
-              `<span class="chat-context-badge">Контекст: ${contextWorkItemId.slice(0, 8)}...</span>` : 
-              '<span class="chat-context-badge">Без контекста</span>'
-            }
+            <h3>Chat с Qwen${contextTitle}</h3>
+            <span class="chat-context-badge" title="${contextEntity ? JSON.stringify(contextEntity) : 'нет контекста'}">
+              ${contextDisplay}
+            </span>
           </div>
+          ${contextEntity ? `
+            <button class="chat-clear-context-btn" title="Очистить контекст" onclick="window.clearChatContext()">✕</button>
+          ` : ''}
           <button class="chat-close-btn" title="Закрыть" aria-label="Закрыть чат">×</button>
         </div>
         

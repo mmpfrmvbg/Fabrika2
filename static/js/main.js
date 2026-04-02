@@ -523,6 +523,37 @@ window.runWorkItemFromTree = async (wiId) => {
 };
 
 // ═══════════════════════════════════════════════════════
+// ASK QWEN ABOUT ENTITY
+// ═══════════════════════════════════════════════════════
+
+window.askQwenAboutEntity = async (type, id) => {
+  // Установить контекст в store
+  store.setChatContext(type, id);
+  
+  // Открыть чат
+  store.openChat(type === 'work_item' ? id : null);
+  
+  // Показать toast
+  const entity = type === 'work_item' 
+    ? store.state.workItems.find(w => w.id === id)
+    : store.state.runs.find(r => r.id === id);
+  
+  const title = entity?.title || entity?.id?.slice(0, 8) || id.slice(0, 8);
+  showFactoryToast(`Контекст: ${type} ${title}...`, 'ok');
+};
+
+window.clearChatContext = () => {
+  store.clearChatContext();
+  showFactoryToast('Контекст очищен', 'ok');
+  // Перерендерить чат
+  const chatPanel = document.getElementById('chat-panel');
+  if (chatPanel) {
+    // Триггерим re-render через store update
+    store.update({ _forceRender: true });
+  }
+};
+
+// ═══════════════════════════════════════════════════════
 // TREE HELPERS
 // ═══════════════════════════════════════════════════════
 

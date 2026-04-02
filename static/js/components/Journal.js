@@ -110,7 +110,23 @@ export function JournalComponent(container) {
           <span class="log-src">${escapeHtml(item.source_type || 'event')}</span>
           <span class="role-badge r-${item.actor_role || 'system'}">${escapeHtml(item.actor_role || 'system')}</span>
           <span class="kind-badge k-${item.kind || 'event'}">${escapeHtml(item.kind || 'event')}</span>
-          <span class="td-mono">${monoId(item.work_item_id)} / ${monoId(item.run_id)}</span>
+          <span class="td-mono" style="display:flex;align-items:center;gap:4px">
+            ${item.work_item_id ? `
+              <span>${monoId(item.work_item_id)}</span>
+              <button type="button" 
+                      onclick="event.stopPropagation();window.askQwenAboutEntity('work_item', '${item.work_item_id}')"
+                      title="Спросить Qwen про задачу"
+                      style="background:var(--primary-dim);border:1px solid var(--primary);color:var(--primary);border-radius:var(--radius-sm);padding:1px 4px;font-size:8px;cursor:pointer">💬</button>
+            ` : '—'}
+            /
+            ${item.run_id ? `
+              <span>${monoId(item.run_id)}</span>
+              <button type="button" 
+                      onclick="event.stopPropagation();window.askQwenAboutEntity('run', '${item.run_id}')"
+                      title="Спросить Qwen про прогон"
+                      style="background:var(--primary-dim);border:1px solid var(--primary);color:var(--primary);border-radius:var(--radius-sm);padding:1px 4px;font-size:8px;cursor:pointer">💬</button>
+            ` : '—'}
+          </span>
         </div>
         <div class="log-row1">
           <span class="title">${escapeHtml(item.message || item.summary || '')}</span>
