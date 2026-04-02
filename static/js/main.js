@@ -635,11 +635,74 @@ window.bulkArchiveDoneVisions = async () => {
 // JOURNAL HELPERS
 // ═══════════════════════════════════════════════════════
 
-window.syncJournalRootFilter = () => { console.log('syncJournalRootFilter'); };
-window.syncJournalManualFilters = () => { console.log('syncJournalManualFilters'); };
-window.clearLogApiFilters = () => { console.log('clearLogApiFilters'); };
-window.clearRouter = () => { showFactoryToast('Контекст сброшен', 'ok'); };
-window.navigateLogPage = () => { console.log('navigateLogPage'); };
+window.syncJournalRootFilter = () => {
+  const rootSelect = document.getElementById('journal-filter-root');
+  const rootId = rootSelect?.value || '';
+  
+  if (rootId) {
+    // Фильтр по поддереву Vision
+    store.selectWorkItem(rootId);
+    window.goPage('tree');
+    showFactoryToast(`Фильтр по Vision: ${rootId.slice(0, 8)}...`, 'ok');
+  } else {
+    // Сброс фильтра
+    window.clearRouter();
+  }
+};
+
+window.syncJournalManualFilters = () => {
+  const wiFilter = document.getElementById('journal-filter-wi')?.value || '';
+  const runFilter = document.getElementById('journal-filter-run')?.value || '';
+  const kindFilter = document.getElementById('journal-filter-kind')?.value || '';
+  const roleFilter = document.getElementById('journal-filter-role')?.value || '';
+  
+  // Обновляем фильтры в Journal component
+  if (window.setJournalFilter) {
+    if (wiFilter) window.setJournalFilter('work_item_id', wiFilter);
+    if (runFilter) window.setJournalFilter('run_id', runFilter);
+    if (kindFilter) window.setJournalFilter('kind', kindFilter);
+    if (roleFilter) window.setJournalFilter('role', roleFilter);
+  }
+  
+  showFactoryToast('Фильтры обновлены', 'ok');
+};
+
+window.clearLogApiFilters = () => {
+  // Сброс всех фильтров
+  const wiFilter = document.getElementById('journal-filter-wi');
+  const runFilter = document.getElementById('journal-filter-run');
+  const kindFilter = document.getElementById('journal-filter-kind');
+  const roleFilter = document.getElementById('journal-filter-role');
+  const searchFilter = document.getElementById('log-search');
+  
+  if (wiFilter) wiFilter.value = '';
+  if (runFilter) runFilter.value = '';
+  if (kindFilter) kindFilter.value = '';
+  if (roleFilter) roleFilter.value = '';
+  if (searchFilter) searchFilter.value = '';
+  
+  // Сброс severity
+  const allSevBtn = document.querySelector('.log-sev-btn[data-sev="all"]');
+  if (allSevBtn && window.setSevFilter) {
+    window.setSevFilter(allSevBtn, 'all');
+  }
+  
+  // Сброс router контекста
+  window.clearRouter();
+  
+  showFactoryToast('Все фильтры сброшены', 'ok');
+};
+
+window.navigateToWorkItem = (id) => {
+  store.selectWorkItem(id);
+  window.goPage('tree');
+  showFactoryToast(`Переход к ${id.slice(0, 8)}...`, 'ok');
+};
+
+window.navigateLogPage = () => {
+  window.goPage('log');
+  showFactoryToast('Переход к журналу', 'ok');
+};
 
 // ═══════════════════════════════════════════════════════
 // ANALYTICS
