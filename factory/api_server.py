@@ -46,6 +46,7 @@ from .work_item_api_ops import (
 )
 from .agents.planner import decompose_with_planner
 from .contracts.planner import PlannerInput
+from .qwen_cli_runner import run_qwen_cli
 from .chat_service import ChatService
 
 load_dotenv()
@@ -1427,6 +1428,85 @@ def create_vision(
 
 
 # ═══════════════════════════════════════════════════════
+# VISION DECOMPOSE (Qwen)
+# ═══════════════════════════════════════════════════════
+
+@app.post("/api/visions/{vision_id}/decompose")
+def decompose_vision_endpoint(
+    vision_id: str,
+    body: dict[str, Any] = Body(...),
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    """
+    Авто-декомпозиция Vision через Qwen.
+    Возвращает иерархию: epics → stories → tasks → atoms.
+    """
+    title = str(body.get("title") or "").strip()
+    description = str(body.get("description") or "").strip()
+    
+    if not title:
+        raise HTTPException(status_code=400, detail={"error": "title is required"})
+    
+    # Промпт для Qwen
+    prompt = f"""
+Декомпозируй задачу на иерархию Epic → Story → Task → Atom.
+
+Vision: {title}
+Описание: {description}
+
+Верни ТОЛЬКО JSON без markdown:
+{{
+  "epics": [
+    {{
+      "title": "Epic title",
+      "description": "Epic description",
+      "stories": [
+        {{
+          "title": "Story title",
+          "description": "Story description",
+          "tasks": [
+            {{
+              "title": "Task title",
+              "description": "Task description",
+              "atoms": [
+                {{
+                  "title": "Atom title",
+                  "description": "Atom description",
+                  "files": ["path/to/file.py"]
+                }}
+              ]
+            }}
+          ]
+        }}
+      ]
+    }}
+  ]
+}}
+"""
+    
+    try:
+        # Вызов Qwen CLI
+        result = run_qwen_cli(prompt=prompt, timeout=300)
+        
+        # Парсинг JSON ответа
+        import re
+        json_match = re.search(r'\{.*\}', result, re.DOTALL)
+        if json_match:
+            hierarchy = json.loads(json_match.group())
+        else:
+            hierarchy = json.loads(result)
+        
+        return {"hierarchy": hierarchy, "ok": True}
+        
+    except json.JSONDecodeError as e:
+        logger.error(f'Qwen decompose JSON error: {e}')
+        raise HTTPException(status_code=500, detail={"error": "Invalid JSON from Qwen", "message": str(e)})
+    except Exception as e:
+        logger.error(f'Qwen decompose error: {e}')
+        raise HTTPException(status_code=500, detail={"error": "Decompose failed", "message": str(e)})
+
+
+# ═══════════════════════════════════════════════════════
 # CHAT (Qwen SSE)
 # ═══════════════════════════════════════════════════════
 
@@ -1514,6 +1594,72 @@ async def chat_qwen_stream(chat_id: str):
             "X-Accel-Buffering": "no"
         }
     )
+
+
+# ═══════════════════════════════════════════════════════
+# QWEN FIX (Auto-fix for Forge errors)
+# ═══════════════════════════════════════════════════════
+
+@app.post("/api/qwen/fix")
+def qwen_fix_endpoint(
+    body: dict[str, Any] = Body(...),
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    """
+    Запрос исправления ошибки у Qwen.
+    Используется для авто-исправления Forge ошибок.
+    """
+    error_type = str(body.get("type") or "unknown").strip()
+    message = str(body.get("message") or "").strip()
+    context = body.get("context", {})
+    
+    if not message:
+        raise HTTPException(status_code=400, detail={"error": "message is required"})
+    
+    # Промпт для Qwen
+    prompt = f"""
+Произошла ошибка при выполнении Forge задачи.
+
+Тип ошибки: {error_type}
+Сообщение: {message}
+Контекст: {json.dumps(context, indent=2)}
+
+Проанализируй ошибку и предложи исправление.
+Верни ТОЛЬКО JSON без markdown:
+{{
+  "suggestion": "Описание проблемы и решения",
+  "files": ["path/to/file.py"],
+  "changes": [
+    {{
+      "file": "path/to/file.py",
+      "action": "modify",
+      "content": "Новое содержимое файла или diff"
+    }}
+  ],
+  "confidence": 0.95
+}}
+"""
+    
+    try:
+        # Вызов Qwen CLI
+        result = run_qwen_cli(prompt=prompt, timeout=120)
+        
+        # Парсинг JSON ответа
+        import re
+        json_match = re.search(r'\{.*\}', result, re.DOTALL)
+        if json_match:
+            fix = json.loads(json_match.group())
+        else:
+            fix = json.loads(result)
+        
+        return {"fix": fix, "ok": True}
+        
+    except json.JSONDecodeError as e:
+        logger.error(f'Qwen fix JSON error: {e}')
+        raise HTTPException(status_code=500, detail={"error": "Invalid JSON from Qwen", "message": str(e)})
+    except Exception as e:
+        logger.error(f'Qwen fix error: {e}')
+        raise HTTPException(status_code=500, detail={"error": "Fix failed", "message": str(e)})
 
 
 def main(argv: list[str] | None = None) -> None:

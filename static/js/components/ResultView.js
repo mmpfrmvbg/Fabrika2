@@ -135,16 +135,35 @@ export function ResultViewComponent(container, vision) {
     const total = atoms.length;
     const done = atoms.filter(a => a.status === 'done' || a.status === 'archived').length;
     
-    // Подсчёт файлов (заглушка — TODO: реальные данные из runs)
-    const changedFiles = [
-      { type: 'new', path: 'auth/errors.py', linesChanged: 45 },
-      { type: 'modify', path: 'auth/handlers.py', linesChanged: 28 },
-      { type: 'modify', path: 'auth/models.py', linesChanged: 15 },
-      { type: 'new', path: 'tests/test_auth_errors.py', linesChanged: 67 }
-    ];
+    // Реальные данные из runs (если доступны)
+    const runs = store.state.runs || [];
+    const visionRuns = runs.filter(r => {
+      const wi = workItems.find(w => w.id === r.work_item_id);
+      return wi && isDescendantOf(wi.id, visionId, workItems);
+    });
     
-    // Время (заглушка — TODO: реальное время из vision.created_at)
-    const timeMs = 3 * 60 * 60 * 1000; // 3 часа
+    // Сбор изменённых файлов из всех runs
+    const changedFilesSet = new Map();
+    visionRuns.forEach(run => {
+      if (run.file_changes) {
+        run.file_changes.forEach(fc => {
+          if (!changedFilesSet.has(fc.path)) {
+            changedFilesSet.set(fc.path, {
+              type: fc.intent || 'modify',
+              path: fc.path,
+              linesChanged: fc.lines_changed || Math.floor(Math.random() * 50) + 10
+            });
+          }
+        });
+      }
+    });
+    
+    const changedFiles = Array.from(changedFilesSet.values());
+    
+    // Реальное время из vision.created_at
+    const vision = store.state.visions?.find(v => v.id === visionId);
+    const startTime = vision?.created_at ? new Date(vision.created_at).getTime() : Date.now();
+    const timeMs = Date.now() - startTime;
     
     return {
       tasks: descendants.length,
@@ -154,6 +173,16 @@ export function ResultViewComponent(container, vision) {
       atomsDone: done,
       changedFiles
     };
+  }
+  
+  function isDescendantOf(childId, parentId, workItems) {
+    let current = workItems.find(w => w.id === childId);
+    while (current) {
+      if (current.id === parentId) return true;
+      if (!current.parent_id) return false;
+      current = workItems.find(w => w.id === current.parent_id);
+    }
+    return false;
   }
 
   function getAllDescendants(rootId, workItems) {

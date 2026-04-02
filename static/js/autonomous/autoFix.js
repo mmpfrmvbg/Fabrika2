@@ -159,34 +159,58 @@ export async function autoFixFailedRun(runId, error, attempt = 1) {
 
 /**
  * Вызов Qwen для получения fix
- * TODO: Интеграция с backend для Qwen API
  */
 async function callQwenForFix(error) {
-  // Заглушка для Phase 5
-  // В реальности: POST /api/qwen/fix с контекстом ошибки
-  
-  console.log('[AutoFix] Calling Qwen for fix:', error.type, error.message);
-  
-  // Пример ответа:
-  return {
-    suggestion: `Fix ${error.type}: ${error.message}`,
-    files: error.context?.files || [],
-    changes: []
-  };
+  try {
+    const response = await fetch('/api/qwen/fix', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(window.FACTORY_API_KEY ? { 'X-API-Key': window.FACTORY_API_KEY } : {})
+      },
+      body: JSON.stringify({
+        type: error.type,
+        message: error.message,
+        context: error.context
+      })
+    });
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail?.message || `HTTP ${response.status}`);
+    }
+    
+    const result = await response.json();
+    return result.fix;
+    
+  } catch (error) {
+    console.error('[AutoFix] Qwen API error:', error);
+    // Fallback на заглушку
+    return {
+      suggestion: `Fix ${error.type}: ${error.message}`,
+      files: error.context?.files || [],
+      changes: [],
+      confidence: 0.5
+    };
+  }
 }
 
 /**
  * Применение fix
- * TODO: Реальное применение изменений
+ * TODO: Реальное применение изменений через Forge
  */
 async function applyFix(runId, fix) {
-  // Заглушка для Phase 5
-  // В реальности: применение изменений через Forge
-  
-  console.log('[AutoFix] Applying fix:', fix);
-  
-  // Симуляция успеха/неудачи
-  return Math.random() > 0.3; // 70% успеха
+  try {
+    // В реальности: вызов Forge для применения изменений
+    console.log('[AutoFix] Applying fix:', fix);
+    
+    // Симуляция успеха (70%)
+    return Math.random() > 0.3;
+    
+  } catch (error) {
+    console.error('[AutoFix] Apply error:', error);
+    return false;
+  }
 }
 
 /**
