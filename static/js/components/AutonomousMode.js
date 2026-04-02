@@ -58,15 +58,19 @@ export function AutonomousModeComponent(container) {
   }
 
   function getAllDescendants(rootId, workItems) {
+    // Итеративный обход вместо рекурсии (защита от stack overflow)
     const descendants = [];
-    const walk = (id) => {
+    const queue = [rootId];
+    
+    while (queue.length > 0) {
+      const id = queue.shift();
       const children = workItems.filter(w => w.parent_id === id);
       for (const child of children) {
         descendants.push(child);
-        walk(child.id);
+        queue.push(child.id);
       }
-    };
-    walk(rootId);
+    }
+    
     return descendants;
   }
 
@@ -245,13 +249,14 @@ export function AutonomousModeComponent(container) {
 
   function calculateETA(progress) {
     if (progress.percent >= 100) return 'Завершено';
-    if (progress.percent === 0) return 'Расчёт...';
+    if (progress.percent === 0 || progress.percent < 5) return 'Расчёт...';
     
     // Простая эвристика: если 10% за 30 минут, то 100% за 5 часов
     const elapsedMinutes = 30; // TODO: реальное время от начала
     const totalMinutes = Math.round(elapsedMinutes / (progress.percent / 100));
     const remainingMinutes = totalMinutes - elapsedMinutes;
     
+    if (remainingMinutes < 0) return 'Почти готово';
     if (remainingMinutes < 60) return `~${remainingMinutes} мин`;
     const hours = Math.round(remainingMinutes / 60);
     return `~${hours} ч`;

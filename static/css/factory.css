@@ -1455,6 +1455,240 @@ button.btn-dash-run:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 
 /* ═══════════════════════════════════════════════════════
+   VISION CREATOR STYLES
+   ═══════════════════════════════════════════════════════ */
+
+.vision-modal-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.vision-modal-wrap.open {
+  display: flex;
+}
+
+.vc-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.vc-modal-card {
+  position: relative;
+  z-index: 1;
+  max-width: 520px;
+  width: 92vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.vc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+
+.vc-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.vc-icon {
+  font-size: 1.5rem;
+}
+
+.vc-title h2 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.vc-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--surface-3);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+}
+
+.vc-close-btn:hover {
+  background: var(--error-dim);
+  color: var(--error);
+}
+
+.vc-body {
+  padding: var(--space-5);
+}
+
+.vc-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.vc-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.vc-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.vc-input,
+.vc-textarea {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-family: var(--font-body);
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+.vc-input:focus,
+.vc-textarea:focus {
+  border-color: var(--primary);
+}
+
+.vc-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.vc-estimation-card {
+  margin-top: var(--space-6);
+  padding: var(--space-4);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.vc-estimation-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.vc-estimation-icon {
+  font-size: 1.2rem;
+}
+
+.vc-estimation-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.vc-estimation-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.vc-estimation-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--surface-3);
+  border-radius: var(--radius-sm);
+}
+
+.vc-estimation-value {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--primary);
+  font-family: var(--font-mono);
+}
+
+.vc-estimation-label {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
+
+.vc-estimation-note {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.vc-footer {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  padding: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.vc-btn-cancel {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.vc-btn-cancel:hover {
+  border-color: var(--border-2);
+  color: var(--text);
+  background: var(--surface-4);
+}
+
+.vc-btn-create {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--primary);
+  background: var(--primary-dim);
+  color: var(--primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.vc-btn-create:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.vc-btn-create:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════
    ADDITIONAL COMPONENT STYLES
    ═══════════════════════════════════════════════════════ */
 

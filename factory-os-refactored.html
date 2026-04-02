@@ -316,7 +316,7 @@
   <!-- Контент рендерится через ChildTaskModalComponent -->
 </div>
 
-<!-- VISION MODAL -->
+<!-- VISION MODAL (старое, переиспользуем для совместимости) -->
 <div id="vision-modal" class="vision-modal-wrap" aria-hidden="true">
   <div class="vision-modal-backdrop" onclick="closeVisionModal()"></div>
   <div class="vision-modal-card card" style="padding:var(--space-4)">
@@ -330,6 +330,11 @@
       <button type="button" onclick="submitNewVision()" style="padding:8px 14px;background:var(--primary-dim);border:1px solid var(--primary);color:var(--primary);border-radius:var(--radius-md);cursor:pointer">Создать</button>
     </div>
   </div>
+</div>
+
+<!-- VISION CREATOR MODAL (новый, для Autonomous Mode) -->
+<div id="vision-creator-modal" class="vision-modal-wrap" aria-hidden="true">
+  <!-- Контент рендерится через VisionCreatorComponent -->
 </div>
 
 <!-- Main JS Module -->

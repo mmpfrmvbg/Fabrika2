@@ -16,6 +16,7 @@ import { DetailPanelComponent } from './components/DetailPanel.js';
 import { ChildTaskModalComponent } from './components/ChildTaskModal.js';
 import { SidebarTreeComponent } from './components/SidebarTree.js';
 import { AutonomousModeComponent } from './components/AutonomousMode.js';
+import { VisionCreatorComponent } from './components/VisionCreator.js';
 import { api } from './api/client.js';
 
 // ═══════════════════════════════════════════════════════
@@ -81,6 +82,10 @@ function initComponents() {
   // Autonomous Mode
   const autonomousRoot = document.getElementById('autonomous-mode-root');
   if (autonomousRoot) componentCleanup.autonomous = AutonomousModeComponent(autonomousRoot);
+
+  // Vision Creator
+  const visionCreatorModal = document.getElementById('vision-creator-modal');
+  if (visionCreatorModal) componentCleanup.visionCreator = VisionCreatorComponent(visionCreatorModal);
 
   window.toggleChat = () => {
     const workItemId = store.state.selectedWorkItemId;
@@ -679,6 +684,16 @@ window.openVisionCreator = () => {
   // TODO: открыть Vision Creator modal
   showFactoryToast('Vision Creator в разработке', 'ok');
 };
+
+window.switchToAutonomousMode = () => {
+  store.update({ activePage: 'autonomous' });
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-autonomous')?.classList.add('active');
+  showFactoryToast('Автономный режим включён', 'ok');
+};
+
+// Инициализация factoryPaused
+window.factoryPaused = false;
 
 // ═══════════════════════════════════════════════════════
 // HELPERS
