@@ -90,6 +90,7 @@ async function loadInitialData() {
       store.loadJournal(),
       store.loadWorkItems(),
       store.loadVisions(),
+      store.loadRuns(20),
       store.loadOrchestratorStatus(),
       store.loadWorkersStatus(),
       store.loadAgents(),
@@ -143,11 +144,51 @@ function renderDashboardJournal() {
 }
 
 function updateNavBadges() {
-  const { journal, workersStatus } = store.state;
+  const { journal, workersStatus, workItems, improvements, failures, agents } = store.state;
+  
+  // Journal: количество новых событий
   const badgeLog = document.getElementById('badge-log');
-  if (badgeLog && journal?.items?.length) badgeLog.textContent = Math.min(journal.items.length, 99);
+  if (badgeLog && journal?.items?.length) {
+    badgeLog.textContent = Math.min(journal.items.length, 99);
+  }
+  
+  // Tree: количество задач
+  const badgeTree = document.getElementById('badge-tree');
+  if (badgeTree && workItems?.length) {
+    badgeTree.textContent = Math.min(workItems.length, 99);
+  }
+  
+  // Forge: количество активных workers
   const badgeForge = document.getElementById('badge-forge');
-  if (badgeForge && workersStatus?.workers) badgeForge.textContent = workersStatus.workers.length;
+  if (badgeForge && workersStatus?.workers) {
+    badgeForge.textContent = Math.min(workersStatus.workers.length, 99);
+  }
+  
+  // Judge: количество ready_for_judge
+  const badgeJudge = document.getElementById('badge-judge');
+  if (badgeJudge && workItems) {
+    const readyForJudge = workItems.filter(w => w.status === 'ready_for_judge').length;
+    badgeJudge.textContent = Math.min(readyForJudge, 99);
+  }
+  
+  // Failures: количество кластеров
+  const badgeFail = document.getElementById('badge-fail');
+  if (badgeFail && failures?.clusters?.length) {
+    badgeFail.textContent = Math.min(failures.clusters.length, 99);
+  }
+  
+  // Improvements: количество proposed
+  const badgeImprovements = document.getElementById('badge-improvements');
+  if (badgeImprovements && improvements?.candidates) {
+    const proposed = improvements.candidates.filter(i => i.status === 'proposed').length;
+    badgeImprovements.textContent = Math.min(proposed, 99);
+  }
+  
+  // HR: количество proposals
+  const badgeHr = document.getElementById('badge-hr');
+  if (badgeHr && agents?.agents) {
+    badgeHr.textContent = Math.min(agents.agents.length, 99);
+  }
 }
 
 function updateHeaderStatus() {
@@ -158,16 +199,44 @@ function updateHeaderStatus() {
     orchStatus.textContent = orchestrator?.running ? 'Running' : '—';
   }
   // Статус соединения
-  const connDot = document.querySelector('.status-dot');
+  const connDot = document.getElementById('live-dot-status');
+  const connText = document.getElementById('live-status-text');
   if (connDot) {
-    connDot.className = 'status-dot ' + (apiConnected ? 'online' : 'offline');
+    connDot.classList.toggle('offline', !apiConnected);
+  }
+  if (connText) {
+    connText.textContent = apiConnected ? 'Live' : 'Offline';
+    connText.style.color = apiConnected ? 'var(--success)' : 'var(--text-muted)';
   }
   // Счётчик активных агентов
-  const agentsCount = document.getElementById('agents-active-count');
+  const agentsCount = document.getElementById('header-agent-summary');
   if (agentsCount && workersStatus?.workers) {
     agentsCount.textContent = workersStatus.workers.length + ' агентов активны';
   }
 }
+
+// ═══════════════════════════════════════════════════════
+// CONNECTION STATUS
+// ═══════════════════════════════════════════════════════
+
+function setApiConnection(ok, detailMsg) {
+  store.update({ apiConnected: ok, apiError: detailMsg || null });
+  
+  const banner = document.getElementById('connection-banner');
+  if (banner) {
+    if (ok) {
+      banner.style.display = 'none';
+      banner.textContent = '';
+    } else {
+      banner.style.display = 'block';
+      banner.textContent = detailMsg || 'Нет связи с API — проверьте что сервер запущен';
+    }
+  }
+  
+  updateHeaderStatus();
+}
+
+window.setApiConnection = setApiConnection;
 
 // ═══════════════════════════════════════════════════════
 // PAGE NAVIGATION

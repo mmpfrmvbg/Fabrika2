@@ -71,23 +71,37 @@
 <!-- SIDEBAR -->
 <nav class="sidebar">
   <span class="nav-section-label">Основное</span>
-  <button class="nav-item" id="nav-journal" onclick="showPage('log',this)">📄 Журнал</button>
+  <button class="nav-item" id="nav-journal" onclick="showPage('log',this)">📄 Журнал
+    <span class="nav-badge" id="badge-log">0</span>
+  </button>
   <button class="nav-item active" id="nav-dashboard" onclick="showPage('dashboard',this)">📊 Dashboard</button>
   <button class="nav-item" id="nav-analytics" onclick="showPage('analytics',this)">📈 Analytics</button>
-  <button class="nav-item" id="nav-tree" onclick="showPage('tree',this)">🌳 Дерево задач</button>
-  <button class="nav-item" id="nav-forge" onclick="showPage('forge',this)">⚡ Очередь Forge</button>
-  
+  <button class="nav-item" id="nav-tree" onclick="showPage('tree',this)">🌳 Дерево задач
+    <span class="nav-badge" id="badge-tree">0</span>
+  </button>
+  <button class="nav-item" id="nav-forge" onclick="showPage('forge',this)">⚡ Очередь Forge
+    <span class="nav-badge" id="badge-forge">0</span>
+  </button>
+
   <span class="nav-section-label">Контроль</span>
   <button class="nav-item" id="nav-fsm" onclick="showPage('fsm',this)">🔀 FSM</button>
-  
+
   <span class="nav-section-label">Агенты</span>
   <button class="nav-item" id="nav-agents" onclick="showPage('agents',this)">👥 Агенты</button>
-  
+
   <span class="nav-section-label">Суд / сбои / HR</span>
-  <button class="nav-item" id="nav-judgements" onclick="showPage('judgements',this)">⚖️ Решения судьи</button>
-  <button class="nav-item" id="nav-failures" onclick="showPage('failures',this)">⚠️ Кластеры сбоев</button>
-  <button class="nav-item" id="nav-improvements" onclick="showPage('improvements',this)">💡 Improvements</button>
-  <button class="nav-item" id="nav-hr" onclick="showPage('hr',this)">📋 Роли и HR</button>
+  <button class="nav-item" id="nav-judgements" onclick="showPage('judgements',this)">⚖️ Решения судьи
+    <span class="nav-badge" id="badge-judge">0</span>
+  </button>
+  <button class="nav-item" id="nav-failures" onclick="showPage('failures',this)">⚠️ Кластеры сбоев
+    <span class="nav-badge" id="badge-fail">0</span>
+  </button>
+  <button class="nav-item" id="nav-improvements" onclick="showPage('improvements',this)">💡 Improvements
+    <span class="nav-badge" id="badge-improvements">0</span>
+  </button>
+  <button class="nav-item" id="nav-hr" onclick="showPage('hr',this)">📋 Роли и HR
+    <span class="nav-badge" id="badge-hr">0</span>
+  </button>
   
   <!-- Chat Toggle Button -->
   <button type="button" class="chat-toggle-btn" onclick="toggleChat()">
@@ -116,6 +130,37 @@
     <div class="card">
       <div class="card-header">◇ Журнал (последние события)</div>
       <div class="dashboard-log-feed" id="dashboard-log-feed"></div>
+    </div>
+
+    <!-- Charts row -->
+    <div class="charts-row" style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);margin-top:var(--space-4)">
+      <div class="card">
+        <div class="card-header">◇ Распределение статусов</div>
+        <div class="chart-container" style="height:220px;position:relative">
+          <canvas id="chart-status"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">◇ Активность за 12ч</div>
+        <div class="chart-container" style="height:220px;position:relative">
+          <canvas id="chart-activity"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent runs -->
+    <div class="card">
+      <div class="card-header">◇ Последние прогоны</div>
+      <div class="tbl-wrap">
+        <table id="dashboard-runs">
+          <thead>
+            <tr>
+              <th>ID</th><th>Task</th><th>Роль</th><th>Статус</th><th>Начало</th><th>Длительность</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </div>
   </div>
   

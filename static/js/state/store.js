@@ -24,7 +24,7 @@ export const store = {
     fsm: null,
     improvements: [],
     workersStatus: null,
-    
+
     // Chat state
     chat: {
       isOpen: false,
@@ -35,13 +35,13 @@ export const store = {
       context: null,
       streamCleanup: null
     },
-    
+
     // UI
     selectedWorkItemId: null,
     activePage: 'dashboard',
     apiConnected: false,
     apiError: null,
-    
+
     // Orchestrator
     orchestrator: {
       running: false,
@@ -154,6 +154,20 @@ export const store = {
       this.update({ visions: this._normalizeArray(visions) });
     } catch (error) {
       console.error('[Store] Failed to load visions:', error);
+    }
+  },
+
+  /**
+   * Загрузить runs
+   */
+  async loadRuns(limit = 20) {
+    try {
+      const runs = await api.getRuns({ limit });
+      this.update({
+        runs: this._normalizeArray(runs)
+      });
+    } catch (error) {
+      console.error('[Store] Failed to load runs:', error);
     }
   },
 
