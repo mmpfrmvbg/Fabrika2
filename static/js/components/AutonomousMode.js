@@ -4,6 +4,7 @@
  */
 
 import { store, subscribe } from '../state/store.js';
+import { ProgressViewComponent } from './ProgressView.js';
 
 // Состояние компонента
 let currentVision = null;
@@ -99,6 +100,12 @@ export function AutonomousModeComponent(container) {
       </div>
     `;
     
+    // Инициализация ProgressView
+    const progressContainer = document.getElementById('progress-view-container');
+    if (progressContainer) {
+      ProgressViewComponent(progressContainer);
+    }
+    
     attachEventListeners();
   }
 
@@ -159,6 +166,8 @@ export function AutonomousModeComponent(container) {
             <span>⏱️ ${eta}</span>
           </div>
         </div>
+        
+        <div id="progress-view-container" style="margin: var(--space-4) 0;"></div>
         
         <div class="am-vision-info">
           <div class="am-vision-label">Vision:</div>

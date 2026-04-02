@@ -3,13 +3,15 @@
  * Управление очередью задач для автономного выполнения
  */
 
+import { store } from '../state/store.js';
+
 /**
  * Построение умной очереди задач для Vision
  * @param {string} visionId - ID Vision
  * @returns {Object} Структура очереди
  */
 export function buildAutoQueue(visionId) {
-  const workItems = window.store?.state?.workItems || [];
+  const workItems = store?.state?.workItems || [];
   
   // 1. Получаем все атомы Vision
   const atoms = getAllAtomsForVision(visionId, workItems);

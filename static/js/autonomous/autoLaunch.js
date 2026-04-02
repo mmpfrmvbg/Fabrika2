@@ -103,31 +103,36 @@ function startMonitoring() {
  * Мониторинг прогресса очереди
  */
 async function monitorQueueProgress() {
-  if (!launchState.activeVisionId) return;
-  
-  // Обновление очереди из store
-  const { store } = window;
-  if (!store) return;
-  
-  const newQueue = buildAutoQueue(launchState.activeVisionId);
-  
-  // Проверка завершённых атомов
-  const completedAtoms = launchState.queue?.current.filter(oldAtom => {
-    const newAtom = newQueue.current.find(a => a.id === oldAtom.id);
-    return !newAtom || newAtom.status === 'done';
-  }) || [];
-  
-  // Обработка завершённых
-  for (const atom of completedAtoms) {
-    await handleAtomCompletion(atom.id);
-  }
-  
-  // Обновление состояния очереди
-  launchState.queue = newQueue;
-  
-  // Проверка на завершение Vision
-  if (isVisionComplete(newQueue)) {
-    handleVisionComplete(launchState.activeVisionId);
+  try {
+    if (!launchState.activeVisionId) return;
+    
+    // Обновление очереди из store
+    const { store } = window;
+    if (!store) return;
+    
+    const newQueue = buildAutoQueue(launchState.activeVisionId);
+    
+    // Проверка завершённых атомов
+    const completedAtoms = launchState.queue?.current.filter(oldAtom => {
+      const newAtom = newQueue.current.find(a => a.id === oldAtom.id);
+      return !newAtom || newAtom.status === 'done';
+    }) || [];
+    
+    // Обработка завершённых
+    for (const atom of completedAtoms) {
+      await handleAtomCompletion(atom.id);
+    }
+    
+    // Обновление состояния очереди
+    launchState.queue = newQueue;
+    
+    // Проверка на завершение Vision
+    if (isVisionComplete(newQueue)) {
+      handleVisionComplete(launchState.activeVisionId);
+    }
+    
+  } catch (error) {
+    console.error('[AutoLaunch] Monitor error:', error);
   }
 }
 
