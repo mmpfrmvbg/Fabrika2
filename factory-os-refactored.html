@@ -173,7 +173,54 @@
       <span><span title="Активен контекст Router">🔗</span> Контекст: <span class="rcb-title" id="router-context-log-title">—</span></span>
       <span class="rcb-link" onclick="clearRouter()">✕ Сбросить</span>
     </div>
-    <div id="log-entries"></div>
+    <div style="display:grid;grid-template-columns:1fr minmax(280px,320px);gap:var(--space-4);align-items:start">
+      <div class="card" style="padding:var(--space-4);min-height:min(70vh,640px);display:flex;flex-direction:column">
+        <div class="log-filters" style="margin-bottom:var(--space-4);flex-wrap:wrap">
+          <label style="font-size:10px;color:var(--text-faint);display:flex;flex-direction:column;gap:2px">Vision / ветка
+            <select id="journal-filter-root" class="log-search" style="min-width:140px" onchange="window.syncJournalRootFilter()" title="root_id — поддерево от узла">
+              <option value="">— вся фабрика —</option>
+            </select>
+          </label>
+          <input class="log-search" type="text" placeholder="work_item_id" id="journal-filter-wi" style="width:min(160px,28vw)" title="Точный id задачи" onchange="window.syncJournalManualFilters()">
+          <input class="log-search" type="text" placeholder="run_id" id="journal-filter-run" style="width:min(160px,28vw)" title="id прогона" onchange="window.syncJournalManualFilters()">
+          <input class="log-search" type="text" placeholder="kind" id="journal-filter-kind" style="width:min(120px,22vw)" title="Точное совпадение kind" onchange="window.syncJournalManualFilters()">
+          <input class="log-search" type="text" placeholder="role" id="journal-filter-role" style="width:min(100px,18vw)" title="forge / judge / …" onchange="window.syncJournalManualFilters()">
+          <input class="log-search" type="text" placeholder="Поиск в ленте…" id="log-search" oninput="window.filterLog()">
+          <button class="log-filter-btn log-sev-btn active" data-sev="all" onclick="window.setSevFilter(this)">Все</button>
+          <button class="log-filter-btn log-sev-btn" data-sev="info" onclick="window.setSevFilter(this)">INFO</button>
+          <button class="log-filter-btn log-sev-btn" data-sev="warn" onclick="window.setSevFilter(this)">WARN</button>
+          <button class="log-filter-btn log-sev-btn" data-sev="error" onclick="window.setSevFilter(this)">ERROR</button>
+          <button type="button" class="log-filter-btn" onclick="clearRouter()" title="Снять выбор в дереве задач (Router)">Сбросить контекст</button>
+          <button type="button" class="log-filter-btn" onclick="window.clearLogApiFilters()" title="Сбросить фильтры журнала">Сброс фильтров</button>
+          <span id="log-api-filter-hint" style="font-size:var(--text-xs);color:var(--primary);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+          <div style="display:flex;gap:var(--space-2);align-items:center;margin-left:auto;flex-wrap:wrap">
+            <button type="button" class="log-filter-btn" id="log-prev" onclick="window.logPage(-1)" title="Предыдущая страница">←</button>
+            <span id="log-page-info" style="font-size:var(--text-xs);color:var(--text-muted);min-width:120px;text-align:center"></span>
+            <button type="button" class="log-filter-btn" id="log-next" onclick="window.logPage(1)" title="Следующая страница">→</button>
+            <span style="font-size:var(--text-xs);color:var(--text-faint)" id="log-count"></span>
+          </div>
+        </div>
+        <div style="border-top:1px solid var(--border);flex:1;overflow:auto;min-height:200px">
+          <div class="log-entry" style="background:var(--surface-2);border-bottom:1px solid var(--border)">
+            <div class="log-entry-main journal-grid-head" style="cursor:default">
+            <span class="jh">Время</span>
+            <span class="jh">Источник</span>
+            <span class="jh">Роль</span>
+            <span class="jh">kind</span>
+            <span class="jh">wi / run</span>
+            </div>
+          </div>
+          <div id="log-entries"></div>
+        </div>
+      </div>
+      <aside class="card" id="journal-detail-pane" style="padding:var(--space-4);position:sticky;top:var(--space-4);max-height:calc(100dvh - 100px);overflow:auto;display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-2)">
+          <div style="font-size:var(--text-xs);color:var(--text-muted)">Детали записи</div>
+          <button type="button" onclick="window.closeJournalDetail()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px" title="Закрыть">×</button>
+        </div>
+        <div id="journal-detail-body" style="font-size:var(--text-xs);font-family:var(--font-mono);white-space:pre-wrap;word-break:break-all;color:var(--text-muted)"></div>
+      </aside>
+    </div>
   </div>
 
   <!-- ANALYTICS PAGE -->

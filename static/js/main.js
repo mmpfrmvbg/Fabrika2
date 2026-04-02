@@ -464,6 +464,60 @@ window.workItemDeleteFromDetail = async (wid) => {
 };
 
 // ═══════════════════════════════════════════════════════
+// TREE RUN BUTTON
+// ═══════════════════════════════════════════════════════
+
+window.runWorkItemFromTree = async (wiId) => {
+  const base = window.FACTORY_API_BASE || document.documentElement.getAttribute('data-api-base') || 'http://127.0.0.1:8000';
+  if (!base) {
+    showFactoryToast('Нет API base', 'err');
+    return;
+  }
+  
+  try {
+    const response = await fetch(base + '/api/work-items/' + encodeURIComponent(wiId) + '/run', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(window.FACTORY_API_KEY ? { 'X-API-Key': window.FACTORY_API_KEY } : {})
+      },
+      body: '{}'
+    });
+    
+    const data = await response.json().catch(() => ({}));
+    
+    if (response.status === 409) {
+      showFactoryToast(data.error || 'Уже есть активный forge-run', 'err');
+      return;
+    }
+    
+    if (!response.ok || data.ok === false) {
+      let err = data.error || ('HTTP ' + response.status);
+      const d = data.detail;
+      if (d) {
+        if (typeof d === 'string') err = d;
+        else if (typeof d === 'object' && d.error) err = d.error;
+      }
+      throw new Error(err);
+    }
+    
+    showFactoryToast('Forge запущен' + (data.run_id ? ' · ' + data.run_id : ''), 'ok');
+    
+    // Refresh данных
+    await loadInitialData();
+    
+    // Обновить detail panel если открыта
+    if (store.state.selectedWorkItemId === wiId && window.openDetail) {
+      const wi = store.state.workItems.find(w => w.id === wiId);
+      if (wi) window.openDetail(wi);
+    }
+    
+  } catch (error) {
+    showFactoryToast(`Ошибка: ${error.message}`, 'err');
+  }
+};
+
+// ═══════════════════════════════════════════════════════
 // TREE HELPERS
 // ═══════════════════════════════════════════════════════
 
@@ -485,8 +539,48 @@ window.onTreeRowClick = (event, id) => {
 };
 
 window.bulkArchiveDoneVisions = async () => {
-  if (!confirm('Архивировать все Vision в статусе done?')) return;
-  showFactoryToast('TODO: массовая архивация', 'ok');
+  const base = window.FACTORY_API_BASE || document.documentElement.getAttribute('data-api-base') || 'http://127.0.0.1:8000';
+  if (!base) {
+    showFactoryToast('Нет API base', 'err');
+    return;
+  }
+  
+  // Считаем Vision в статусе done
+  const visions = store.state.visions?.visions || store.state.visions || [];
+  const doneVisions = visions.filter(v => v.status === 'done');
+  
+  if (doneVisions.length === 0) {
+    showFactoryToast('Нет Vision в статусе done', 'ok');
+    return;
+  }
+  
+  if (!confirm(`Архивировать ${doneVisions.length} Vision в статусе done?`)) return;
+  
+  try {
+    const response = await fetch(base + '/api/bulk/archive', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(window.FACTORY_API_KEY ? { 'X-API-Key': window.FACTORY_API_KEY } : {})
+      },
+      body: JSON.stringify({ filter: 'all_done_visions' })
+    });
+    
+    const result = await response.json().catch(() => ({}));
+    
+    if (!response.ok) {
+      throw new Error(result.error || ('HTTP ' + response.status));
+    }
+    
+    const archivedCount = result.archived_count || doneVisions.length;
+    showFactoryToast(`Архивировано ${archivedCount} Vision`, 'ok');
+    
+    // Refresh данных
+    await loadInitialData();
+    
+  } catch (error) {
+    showFactoryToast(`Ошибка: ${error.message}`, 'err');
+  }
 };
 
 // ═══════════════════════════════════════════════════════

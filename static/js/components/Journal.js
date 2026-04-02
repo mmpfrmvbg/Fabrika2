@@ -103,7 +103,7 @@ export function JournalComponent(container) {
     
     return items.map(item => `
       <div class="log-entry ${item.severity === 'error' ? 'sev-error' : item.severity === 'warn' ? 'sev-warn' : 'sev-info'}"
-           onclick="window.showJournalDetail?.(${item.id})">
+           onclick="window.showJournalDetail?.(${JSON.stringify(item).replace(/"/g, '&quot;')})">
         <div class="log-entry-main journal-row">
           <span class="log-time">${formatTime(item.event_time)}</span>
           <span class="log-src">${escapeHtml(item.source_type || 'event')}</span>
@@ -164,20 +164,68 @@ export function JournalComponent(container) {
     render(journal);
   };
   
-  window.showJournalDetail = (id) => {
+  window.showJournalDetail = (entry) => {
     const detailPane = document.getElementById('journal-detail-pane');
     const detailBody = document.getElementById('journal-detail-body');
-    if (detailPane && detailBody) {
-      const item = store.state.journal?.items?.find(i => i.id === id);
-      if (item) {
-        detailPane.style.display = 'block';
-        detailBody.textContent = JSON.stringify(item, null, 2);
-      }
-    }
+    if (!detailPane || !detailBody) return;
+    
+    // Показываем панель
+    detailPane.style.display = 'block';
+    
+    // Формируем детальную информацию
+    const detail = {
+      id: entry.id,
+      event_time: entry.event_time,
+      event_type: entry.event_type,
+      source_type: entry.journal_source_type || entry.source_type,
+      actor_role: entry.actor_role,
+      kind: entry.kind,
+      work_item_id: entry.work_item_id,
+      run_id: entry.run_id,
+      entity_id: entry.entity_id,
+      severity: entry.severity,
+      message: entry.message || entry.summary,
+      payload: entry.payload
+    };
+    
+    detailBody.innerHTML = `
+<div style="margin-bottom:var(--space-2)"><strong style="color:var(--text)">ID:</strong> <span class="mono-id">${entry.id}</span> <button type="button" onclick="navigator.clipboard.writeText('${entry.id}');window.showFactoryToast('ID скопирован','ok')" style="margin-left:6px;padding:2px 6px;font-size:9px;background:var(--surface-3);border:1px solid var(--border);color:var(--text-muted);cursor:pointer;border-radius:3px" title="Копировать ID">📋</button></div>
+<div style="margin-bottom:var(--space-2)"><strong style="color:var(--text)">Время:</strong> ${entry.event_time || '—'}</div>
+<div style="margin-bottom:var(--space-2)"><strong style="color:var(--text)">Тип:</strong> ${entry.event_type || '—'}</div>
+<div style="margin-bottom:var(--space-2)"><strong style="color:var(--text)">Источник:</strong> ${entry.journal_source_type || entry.source_type || '—'}</div>
+<div style="margin-bottom:var(--space-2)"><strong style="color:var(--text)">Роль:</strong> ${entry.actor_role || '—'}</div>
+<div style="margin-bottom:var(--space-2)"><strong style="color:var(--text)">Kind:</strong> ${entry.kind || '—'}</div>
+<div style="margin-bottom:var(--space-2)"><strong style="color:var(--text)">Severity:</strong> ${entry.severity || 'info'}</div>
+${entry.work_item_id ? `<div style="margin-bottom:var(--space-2)"><strong style="color:var(--text)">Work Item:</strong> <span class="mono-id">${entry.work_item_id}</span> <button type="button" onclick="window.navigateToWorkItem('${entry.work_item_id}')" style="margin-left:6px;padding:2px 6px;font-size:9px;background:var(--primary-dim);border:1px solid var(--primary);color:var(--primary);cursor:pointer;border-radius:3px" title="Перейти к задаче">→</button></div>` : ''}
+${entry.run_id ? `<div style="margin-bottom:var(--space-2)"><strong style="color:var(--text)">Run:</strong> <span class="mono-id">${entry.run_id}</span></div>` : ''}
+${entry.entity_id ? `<div style="margin-bottom:var(--space-2)"><strong style="color:var(--text)">Entity:</strong> <span class="mono-id">${entry.entity_id}</span></div>` : ''}
+<div style="margin-bottom:var(--space-2)"><strong style="color:var(--text)">Сообщение:</strong><div style="margin-top:4px;color:var(--text-muted);line-height:1.5">${entry.message || entry.summary || '—'}</div></div>
+${entry.payload && Object.keys(entry.payload).length > 0 ? `<div style="margin-bottom:var(--space-2)"><strong style="color:var(--text)">Payload:</strong><details style="margin-top:4px"><summary style="cursor:pointer;color:var(--text-faint)">Показать</summary><pre style="margin-top:6px;padding:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);max-height:400px;overflow:auto;font-size:10px;color:var(--text-muted)">${escapeHtml(JSON.stringify(entry.payload, null, 2))}</pre></details></div>` : ''}
+    `;
   };
   
-  subscribeToStore();
+  window.closeJournalDetail = () => {
+    const detailPane = document.getElementById('journal-detail-pane');
+    if (detailPane) detailPane.style.display = 'none';
+  };
   
+  window.navigateToWorkItem = (id) => {
+    store.selectWorkItem(id);
+    window.goPage('tree');
+    showFactoryToast(`Переход к ${id.slice(0, 8)}...`, 'ok');
+  };
+  
+  window.showFactoryToast = (message, kind = 'ok') => {
+    const el = document.getElementById('factory-toast');
+    if (!el) return;
+    el.textContent = message;
+    el.className = 'factory-toast visible ' + (kind === 'err' ? 'err' : 'ok');
+    clearTimeout(el._hideT);
+    el._hideT = setTimeout(() => { el.classList.remove('visible'); }, 3000);
+  };
+
+  subscribeToStore();
+
   return () => { if (unsubscribe) unsubscribe(); };
 }
 
