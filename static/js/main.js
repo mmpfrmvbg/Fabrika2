@@ -15,6 +15,7 @@ import { AgentsComponent, ImprovementsComponent, JudgementsComponent, HRComponen
 import { DetailPanelComponent } from './components/DetailPanel.js';
 import { ChildTaskModalComponent } from './components/ChildTaskModal.js';
 import { SidebarTreeComponent } from './components/SidebarTree.js';
+import { AutonomousModeComponent } from './components/AutonomousMode.js';
 import { api } from './api/client.js';
 
 // ═══════════════════════════════════════════════════════
@@ -76,6 +77,10 @@ function initComponents() {
   // Sidebar Quick Jump
   const sidebarTreeRoot = document.getElementById('sidebar-tree-root');
   if (sidebarTreeRoot) componentCleanup.sidebarTree = SidebarTreeComponent(sidebarTreeRoot);
+
+  // Autonomous Mode
+  const autonomousRoot = document.getElementById('autonomous-mode-root');
+  if (autonomousRoot) componentCleanup.autonomous = AutonomousModeComponent(autonomousRoot);
 
   window.toggleChat = () => {
     const workItemId = store.state.selectedWorkItemId;
@@ -669,6 +674,11 @@ function showFactoryToast(message, kind = 'ok') {
 
 // Глобальный экспорт для компонентов
 window.showFactoryToast = showFactoryToast;
+
+window.openVisionCreator = () => {
+  // TODO: открыть Vision Creator modal
+  showFactoryToast('Vision Creator в разработке', 'ok');
+};
 
 // ═══════════════════════════════════════════════════════
 // HELPERS
