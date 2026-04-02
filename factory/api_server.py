@@ -53,6 +53,21 @@ load_dotenv()
 
 app = FastAPI(title="Factory read-only API", version="1.0")
 
+# Глобальный logger для endpoint (создаётся при первом использовании)
+_logger: FactoryLogger | None = None
+
+def _get_logger(conn: sqlite3.Connection | None = None) -> FactoryLogger:
+    """Получить logger для endpoint."""
+    global _logger
+    if _logger is None:
+        try:
+            tmp_conn = get_connection(_db_path())
+            _logger = FactoryLogger(tmp_conn)
+        except Exception:
+            # Fallback: logger без connection
+            _logger = FactoryLogger(None)
+    return _logger
+
 
 async def require_api_key(request: Request) -> None:
     """Если задан ``FACTORY_API_KEY``, мутирующие эндпоинты требуют заголовок ``X-API-Key``."""
@@ -1499,10 +1514,10 @@ Vision: {title}
         return {"hierarchy": hierarchy, "ok": True}
         
     except json.JSONDecodeError as e:
-        logger.error(f'Qwen decompose JSON error: {e}')
+        _get_logger().error(f'Qwen decompose JSON error: {e}')
         raise HTTPException(status_code=500, detail={"error": "Invalid JSON from Qwen", "message": str(e)})
     except Exception as e:
-        logger.error(f'Qwen decompose error: {e}')
+        _get_logger().error(f'Qwen decompose error: {e}')
         raise HTTPException(status_code=500, detail={"error": "Decompose failed", "message": str(e)})
 
 
@@ -1655,10 +1670,10 @@ def qwen_fix_endpoint(
         return {"fix": fix, "ok": True}
         
     except json.JSONDecodeError as e:
-        logger.error(f'Qwen fix JSON error: {e}')
+        _get_logger().error(f'Qwen fix JSON error: {e}')
         raise HTTPException(status_code=500, detail={"error": "Invalid JSON from Qwen", "message": str(e)})
     except Exception as e:
-        logger.error(f'Qwen fix error: {e}')
+        _get_logger().error(f'Qwen fix error: {e}')
         raise HTTPException(status_code=500, detail={"error": "Fix failed", "message": str(e)})
 
 
