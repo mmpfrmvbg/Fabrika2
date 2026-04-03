@@ -70,6 +70,23 @@ def load_dotenv(path: Path | None = None) -> None:
         os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
+def _env_qwen_dry_run_default_true() -> bool:
+    """Локально и в тестах dry-run считается включённым по умолчанию."""
+    raw = os.environ.get("FACTORY_QWEN_DRY_RUN")
+    if raw is None:
+        return True
+    s = raw.strip().lower()
+    return s not in ("0", "false", "no", "off")
+
+
+def _allow_empty_accounts() -> bool:
+    """Разрешить запуск без реальных API-ключей (dev/CI dry-run)."""
+    raw = os.environ.get("FACTORY_ALLOW_EMPTY_ACCOUNTS")
+    if raw is None:
+        return _env_qwen_dry_run_default_true()
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 def load_accounts() -> list[dict]:
     accounts = []
     for i in range(1, 10):
@@ -88,6 +105,15 @@ def load_accounts() -> list[dict]:
             }
         )
     if not accounts:
+        if _allow_empty_accounts():
+            return [
+                {
+                    "id": "acc_local_dry",
+                    "name": "LocalDryRun",
+                    "api_key": "dry-run-placeholder",
+                    "daily_limit": 3000,
+                }
+            ]
         raise RuntimeError(
             "Нет API-аккаунтов. Задайте FACTORY_API_KEY_1, FACTORY_API_NAME_1 и т.д. "
             "в окружении или в файле .env (см. .env.example), либо положите "

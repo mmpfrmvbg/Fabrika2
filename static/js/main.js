@@ -440,8 +440,11 @@ function entityInRouterScope(entityId, scopeIds) {
   
   // Проверяем run_id
   if (eid.startsWith('run_')) {
-    // TODO: загрузить runs и проверить work_item_id
-    return false;
+    const runs = Array.isArray(store.state.runs) ? store.state.runs : [];
+    const run = runs.find(r => String(r.id) === eid);
+    if (!run) return false;
+    const wiId = run.work_item_id ?? run.workItemId ?? run.work_item ?? null;
+    return wiId ? scopeIds.has(String(wiId)) : false;
   }
   
   return false;
@@ -749,8 +752,13 @@ window.closeOrchestratorMenu = () => {
 window.showFactoryToast = showFactoryToast;
 
 window.openVisionCreator = () => {
-  // TODO: открыть Vision Creator modal
-  showFactoryToast('Vision Creator в разработке', 'ok');
+  const modal = document.getElementById('vision-creator-modal');
+  if (!modal) {
+    showFactoryToast('Vision Creator недоступен', 'err');
+    return;
+  }
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
 };
 
 window.switchToAutonomousMode = () => {

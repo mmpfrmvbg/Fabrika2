@@ -283,8 +283,11 @@ export function AutonomousModeComponent(container) {
     if (progress.percent >= 100) return 'Завершено';
     if (progress.percent === 0 || progress.percent < 5) return 'Расчёт...';
     
-    // Простая эвристика: если 10% за 30 минут, то 100% за 5 часов
-    const elapsedMinutes = 30; // TODO: реальное время от начала
+    // Эвристика от реального времени жизни vision.
+    const createdAt = currentVision?.created_at || currentVision?.createdAt;
+    const elapsedMinutes = createdAt
+      ? Math.max(1, Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000))
+      : 30;
     const totalMinutes = Math.round(elapsedMinutes / (progress.percent / 100));
     const remainingMinutes = totalMinutes - elapsedMinutes;
     
@@ -355,7 +358,7 @@ export function AutonomousModeComponent(container) {
 
 window.factoryPaused = false;
 
-window.toggleFactoryPause = () => {
+window.toggleFactoryPause = async () => {
   window.factoryPaused = !window.factoryPaused;
   const status = window.factoryPaused ? 'paused' : 'running';
   showFactoryToast(`Фабрика ${window.factoryPaused ? 'на паузе' : 'продолжает работу'}`, 'ok');
@@ -365,8 +368,17 @@ window.toggleFactoryPause = () => {
     window.Storage.set(window.StorageKeys.PAUSED, window.factoryPaused);
   }
   
-  // TODO: API вызов для паузы/продолжения
-  // await api.pauseFactory(status);
+  // Управляем через оркестратор (доступные backend endpoint'ы).
+  try {
+    if (window.factoryPaused) {
+      await store.orchestratorStop();
+    } else {
+      await store.orchestratorStart();
+    }
+  } catch (error) {
+    console.error('[AutonomousMode] toggle pause failed:', error);
+    showFactoryToast(`Ошибка переключения: ${error.message}`, 'err');
+  }
 };
 
 window.showAutonomousDetails = () => {

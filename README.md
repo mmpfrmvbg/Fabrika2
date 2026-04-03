@@ -7,15 +7,6 @@
 - **UI:** `factory-os.html` → HTTP → **FastAPI** `factory/api_server.py` → SQLite (`factory/db.py`, DDL в `schema_ddl.py`).
 - **Контур:** `wire()` → `Orchestrator` (`orchestrator_core.py`) → **FSM** `fsm.py` с `guards.py` / `actions.py` → агенты (Forge, Review, Judge, Planner, Architect, …).
 
-Глубокий разбор рисков и истории линий кода: **[AUDIT_REPORT.md](AUDIT_REPORT.md)**.
-
-## Legacy (deprecated)
-
-Исторические файлы перенесены в **`factory/legacy/`** — не используются в production, не импортируются из `factory/` и не участвуют в CI:
-
-- `orchestrator_v1.py`, `agents_v1.py`, `dashboard_v1.py` (старый stdlib-дашборд)
-- `transitions_v1.sql`, `schema_v1.sql` (старые FSM/DDL; канон — `schema_ddl.py` + `db.py`)
-
 FSM и переходы задаются только через `schema_ddl.py` / seed в `db.py` и таблицу `state_transitions`.
 
 ## Документация контракта

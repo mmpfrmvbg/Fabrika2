@@ -220,8 +220,10 @@ class StateMachine:
 
             aname = rule.get("action_name") or ""
             if aname:
-                action_fn = self.actions.resolve(aname)
-                action_fn(wi_id, **ctx)
+                action_names = [a.strip() for a in aname.split(";") if a.strip()]
+                for action_name in action_names:
+                    action_fn = self.actions.resolve(action_name)
+                    action_fn(wi_id, **ctx)
 
         return True, f"{old_status} -> {new_status}"
 

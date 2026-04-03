@@ -6,6 +6,7 @@
 import { api } from '../api/client.js';
 import { debounce } from '../utils/debounce.js';
 import { showFactoryToast } from '../utils/helpers.js';
+import { autoDecomposeVision } from '../autonomous/autoDecompose.js';
 
 // Состояние компонента
 let isEstimating = false;
@@ -174,8 +175,12 @@ export function VisionCreatorComponent(container) {
           window.switchToAutonomousMode();
         }
         
-        // 4. TODO: Авто-декомпозиция (Phase 3)
-        // await api.autoDecompose(vision.id);
+        // 4. Авто-декомпозиция (best-effort, не блокирует UX при ошибке)
+        try {
+          await autoDecomposeVision(vision.id, title, description);
+        } catch (decomposeError) {
+          console.warn('[VisionCreator] autoDecompose skipped:', decomposeError);
+        }
         
         showFactoryToast('Фабрика начинает работу...', 'ok');
         
@@ -194,15 +199,8 @@ export function VisionCreatorComponent(container) {
       render();
       
       try {
-        // TODO: Qwen API для оценки (Phase 3)
-        // Пока заглушка
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        estimation = {
-          tasks: '~18',
-          time: '~3-4 часа',
-          files: '~12'
-        };
+        // Локальная оценка сложности на основе длины/структуры описания.
+        estimation = estimateVisionScope(title, document.getElementById('vc-desc-input')?.value || '');
         
       } catch (error) {
         console.error('Estimation failed:', error);
@@ -253,5 +251,21 @@ window.onVisionTitleChange = debounce(() => {
     visionCreatorInstance.estimate();
   }
 }, 500);
+
+function estimateVisionScope(title, description) {
+  const t = (title || '').trim();
+  const d = (description || '').trim();
+  const words = `${t} ${d}`.split(/\s+/).filter(Boolean).length;
+  const lines = d.split('\n').map(s => s.trim()).filter(Boolean).length;
+  const complexity = Math.max(1, Math.min(5, Math.ceil(words / 25) + Math.ceil(lines / 6)));
+  const tasks = 6 + complexity * 4;
+  const files = 3 + complexity * 2;
+  const hours = 1 + complexity;
+  return {
+    tasks: `~${tasks}`,
+    files: `~${files}`,
+    time: `~${hours}-${hours + 1} ч`,
+  };
+}
 
 // Helpers импортируются из utils/helpers.js

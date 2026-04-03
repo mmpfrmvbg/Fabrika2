@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     
     steps:
     - uses: actions/checkout@v4
@@ -16,7 +16,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.14'
+        python-version: '3.11'
         cache: 'pip'
     
     - name: Install dependencies
@@ -26,7 +26,6 @@ jobs:
     
     - name: Run tests
       run: |
-        cd proekt
         python -m unittest discover -v -s factory/tests
     
     - name: Upload test results
@@ -34,4 +33,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: test-results
-        path: proekt/test-results/
+        path: test-results/

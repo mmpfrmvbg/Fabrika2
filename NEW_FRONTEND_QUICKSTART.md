@@ -136,10 +136,6 @@ proekt/
 │           ├── Analytics.js
 │           ├── Others.js
 │           └── ui.js
-└── factory/
-    └── legacy/
-        ├── frontend_v1.html      # Legacy (не используется)
-        └── README.md
 ```
 
 ## 🔧 Разработка
