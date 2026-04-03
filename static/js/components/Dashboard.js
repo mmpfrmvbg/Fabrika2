@@ -31,7 +31,11 @@ export function DashboardComponent(container) {
     }
 
     // Visions - нормализуем массив
-    const visionsArray = visions?.visions || Array.isArray(visions) ? visions : [];
+    const visionsArray = Array.isArray(visions)
+      ? visions
+      : Array.isArray(visions?.visions)
+        ? visions.visions
+        : [];
     const visionsContainer = document.getElementById('dashboard-visions');
     if (visionsContainer) {
       visionsContainer.innerHTML = renderVisions(visionsArray);
@@ -171,11 +175,6 @@ export function DashboardComponent(container) {
         <span class="badge s-${item.status || 'info'}">${item.event_type || ''}</span>
       </div>
     `).join('');
-  }
-  
-  function renderCharts(analytics) {
-    // TODO: Chart.js интеграция
-    // Для простоты пока заглушка
   }
   
   subscribeToStore();

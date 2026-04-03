@@ -62,8 +62,11 @@ function getAllAtomsForVision(visionId, workItems) {
  * Сортирует так чтобы зависимости выполнялись первыми
  */
 function topologicalSort(atoms, workItems) {
-  // Простая реализация: атомы без зависимостей первыми
-  // TODO: Реальный анализ зависимостей из файлов
+  // Эвристика порядка:
+  // 1) in_progress/in_review (уже стартовали),
+  // 2) ready/planned/draft с учётом количества зависимостей,
+  // 3) done/archived.
+  const dependencyWeight = (atom) => getDependencyIds(atom).length;
   
   const ready = atoms.filter(a => 
     a.status === 'ready_for_work' || 
@@ -81,7 +84,8 @@ function topologicalSort(atoms, workItems) {
     a.status === 'archived'
   );
   
-  return [...inProgress, ...ready, ...done];
+  const readySorted = [...ready].sort((a, b) => dependencyWeight(a) - dependencyWeight(b));
+  return [...inProgress, ...readySorted, ...done];
 }
 
 /**
@@ -127,13 +131,45 @@ function groupByDependencies(sortedAtoms, workItems) {
  * Проверка выполнены ли зависимости задачи
  */
 function areDependenciesMet(atom, processedIds, workItems) {
-  // Простая проверка: если родитель обработан — задача доступна
-  // TODO: Реальный анализ зависимостей файлов
+  // Если явно указаны зависимости — учитываем их в первую очередь.
+  const dependencyIds = getDependencyIds(atom);
+  if (dependencyIds.length > 0) {
+    return dependencyIds.every((depId) => processedIds.has(depId));
+  }
   
   const parent = workItems.find(w => w.id === atom.parent_id);
   if (!parent) return true;
   
   return processedIds.has(parent.id);
+}
+
+/**
+ * Извлекает список зависимостей atom из поддерживаемых полей.
+ * Поддержка:
+ * - atom.dependencies: string[]
+ * - atom.depends_on: string[]
+ * - atom.metadata (JSON): { dependencies: string[] } | { depends_on: string[] }
+ */
+function getDependencyIds(atom) {
+  if (!atom || typeof atom !== 'object') return [];
+  const direct = []
+    .concat(Array.isArray(atom.dependencies) ? atom.dependencies : [])
+    .concat(Array.isArray(atom.depends_on) ? atom.depends_on : []);
+
+  let metaDeps = [];
+  const rawMeta = atom.metadata;
+  if (rawMeta) {
+    try {
+      const parsed = typeof rawMeta === 'string' ? JSON.parse(rawMeta) : rawMeta;
+      metaDeps = []
+        .concat(Array.isArray(parsed?.dependencies) ? parsed.dependencies : [])
+        .concat(Array.isArray(parsed?.depends_on) ? parsed.depends_on : []);
+    } catch (_e) {
+      // ignore invalid metadata JSON
+    }
+  }
+
+  return [...new Set([...direct, ...metaDeps].map(String).filter(Boolean))];
 }
 
 /**

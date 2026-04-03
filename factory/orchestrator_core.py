@@ -175,20 +175,19 @@ class Orchestrator:
         Один SQL ``UPDATE … WHERE rowid=(SELECT … LIMIT 1)`` атомарно выдаёт lease
         одному воркеру; гонка SELECT→UPDATE между процессами исключена.
         """
-        lease_until = (
-            datetime.now(timezone.utc) + timedelta(minutes=30)
-        ).isoformat()
-        agent_id = "orchestrator_tick"
-
+        qname = queue.value if isinstance(queue, QueueName) else str(queue)
+        if qname not in {q.value for q in QueueName}:
+            return
         for _ in range(5):
             cur = self.conn.execute(
-                """
+                f"""
                 UPDATE work_item_queue
-                SET lease_owner = ?, lease_until = ?
+                SET lease_owner = 'orchestrator_tick',
+                    lease_until = strftime('%Y-%m-%dT%H:%M:%f','now','+30 minutes')
                 WHERE rowid = (
                     SELECT wiq.rowid FROM work_item_queue wiq
                     INNER JOIN work_items wi ON wiq.work_item_id = wi.id
-                    WHERE wiq.queue_name = ?
+                    WHERE wiq.queue_name = '{qname}'
                       AND wiq.lease_owner IS NULL
                       AND wiq.available_at <= strftime('%Y-%m-%dT%H:%M:%f','now')
                       AND wiq.attempts < wiq.max_attempts
@@ -197,7 +196,6 @@ class Orchestrator:
                 )
                 RETURNING work_item_id
                 """,
-                (agent_id, lease_until, queue.value),
             )
             claimed = cur.fetchone()
             if not claimed:

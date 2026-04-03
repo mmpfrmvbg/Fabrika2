@@ -210,9 +210,14 @@ export function FSMComponent(container) {
 
   // Глобальная функция для подсветки статуса
   window.highlightFSMStatus = (status) => {
-    // Скроллим к дереву и показываем задачи с этим статусом
-    showFactoryToast(`Статус: ${status}`, 'ok');
-    // TODO: фильтр дерева по статусу
+    const statusValue = String(status || '').trim();
+    if (!statusValue) return;
+    // Сохраняем фильтр в глобальном контексте для Tree/дебага
+    window.FACTORY_TREE_STATUS_FILTER = statusValue;
+    store.update({ activePage: 'tree' });
+    if (window.goPage) window.goPage('tree');
+    const matched = (store.state.workItems || []).filter(w => w.status === statusValue).length;
+    showFactoryToast(`Фильтр FSM: ${statusValue} (${matched})`, 'ok');
   };
   
   subscribeToStore();

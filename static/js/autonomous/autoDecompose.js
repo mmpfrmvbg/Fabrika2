@@ -15,7 +15,7 @@ import { api } from '../api/client.js';
 export async function autoDecomposeVision(visionId, title, description) {
   try {
     // 1. Запрос к Qwen API для декомпозиции
-    const decomposition = await callQwenDecomposition(title, description);
+    const decomposition = await callQwenDecomposition(title, description, visionId);
     
     // 2. Парсинг ответа
     const hierarchy = parseDecomposition(decomposition);
@@ -65,7 +65,7 @@ async function callQwenDecomposition(title, description, visionId) {
     
   } catch (error) {
     console.error('[AutoDecompose] Qwen API error:', error);
-    // Fallback на заглушку
+    // Fallback на детерминированную минимальную декомпозицию
     return {
       epics: [{
         title: 'Auto-generated Epic',

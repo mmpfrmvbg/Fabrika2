@@ -5,7 +5,7 @@
 - Node-installed `qwen` CLI available in PATH (`where qwen` should work on Windows)
 
 ## Environment
-Create or edit `Fabrika2.0/proekt/.env`:
+Create or edit `.env`:
 - `FACTORY_QWEN_DRY_RUN=0`
 - `FACTORY_QWEN_BIN=qwen`
 - `FACTORY_QWEN_PROMPT_VIA=stdin`
@@ -22,7 +22,7 @@ Provide accounts in one of two ways:
 - **Explicit keys**: set `FACTORY_API_KEY_1..3` in `.env`.
 
 ## Verify LLM access (smoke)
-Run from `Fabrika2.0/proekt`:
+Run from repository root:
 
 ```bash
 python -m factory.verify_qwen_accounts
@@ -31,7 +31,7 @@ python -m factory.verify_qwen_accounts
 It checks OAuth files, AccountManager rotation, and does a short `qwen` CLI call per token.
 
 ## Run the factory (API + orchestrator)
-From `Fabrika2.0/proekt`:
+From repository root:
 
 ```bash
 python -m factory.api_server
@@ -75,7 +75,6 @@ powershell -NoProfile -Command "Invoke-RestMethod -Method Post -Uri 'http://127.
 **Терминал 1 — API + orchestrator tick**
 
 ```bash
-cd Fabrika2.0/proekt
 set FACTORY_QWEN_DRY_RUN=1
 python -m factory.api_server
 ```
@@ -83,7 +82,6 @@ python -m factory.api_server
 **Терминал 2 — Worker 1**
 
 ```bash
-cd Fabrika2.0/proekt
 set FACTORY_QWEN_DRY_RUN=1
 python -m factory.worker --id worker-1
 ```
@@ -91,7 +89,6 @@ python -m factory.worker --id worker-1
 **Терминал 3 — Worker 2 (опционально)**
 
 ```bash
-cd Fabrika2.0/proekt
 set FACTORY_QWEN_DRY_RUN=1
 python -m factory.worker --id worker-2 --poll 3
 ```
@@ -113,7 +110,7 @@ curl -X POST http://localhost:8000/api/visions -H "Content-Type: application/jso
   - `GET /api/runs/<run_id>/steps`
 
 ## Run tests
-From `Fabrika2.0/proekt`:
+From repository root:
 
 ```bash
 python -m unittest discover -v -s factory/tests
