@@ -126,7 +126,7 @@ def insert_run_step(
 ) -> None:
     conn.execute(
         """
-        INSERT INTO run_steps (id, run_id, step_no, step_kind, status, summary, payload)
+        INSERT OR IGNORE INTO run_steps (id, run_id, step_no, step_kind, status, summary, payload)
         VALUES (?, ?, ?, ?, 'completed', ?, ?)
         """,
         (
