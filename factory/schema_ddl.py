@@ -620,6 +620,14 @@ INSERT OR IGNORE INTO state_transitions VALUES
      'guard_has_revision_comment',NULL,NULL,
      'Фаза 2: алиас author_revised — повторная подача'),
 
+    ('st_53','work_item','ready_for_judge','reworked','ready_for_work',
+     'guard_has_review_approval','action_enqueue_forge','["atom","atm_change"]',
+     'Фаза 2: retry-алиас author_revised после ревью — в кузницу'),
+
+    ('st_54','work_item','ready_for_judge','reworked','ready_for_work',
+     'guard_has_file_changes','action_enqueue_forge','["atom","atm_change"]',
+     'Фаза 2: retry-алиас author_revised после форжа — в кузницу'),
+
     ('st_23','work_item','ready_for_judge','judge_deferred','blocked',
      '','action_log_block_reason',NULL,
      'Фаза 2: судья отложил (deferred → blocked)');

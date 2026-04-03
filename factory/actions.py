@@ -351,8 +351,15 @@ class Actions:
     def resolve(self, action_name: str):
         if not action_name:
             return lambda *a, **k: None
+        # Support composite actions separated by ";"
+        parts = [p.strip() for p in action_name.split(";") if p.strip()]
+        if len(parts) > 1:
+            fns = [self.resolve(p) for p in parts]
+            def _composite(wi_id: str, **ctx):
+                for f in fns:
+                    f(wi_id, **ctx)
+            return _composite
         fn = getattr(self, action_name, None)
         if fn is None:
-            raise ValueError(f"Неизвестный action: {action_name}")
+            raise ValueError(f"??????????? action: {action_name}")
         return fn
-
