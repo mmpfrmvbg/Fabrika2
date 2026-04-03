@@ -485,27 +485,7 @@ export function DetailPanelComponent(container) {
   };
 }
 
-// ═══════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════
-
-function getStatusLabel(status) {
-  const labels = {
-    draft: 'Draft',
-    planned: 'Planned',
-    ready_for_judge: '→ Judge',
-    judge_rejected: 'Judge ✗',
-    ready_for_work: 'Ready',
-    in_progress: 'Running',
-    in_review: 'In Review',
-    review_rejected: 'Review ✗',
-    blocked: 'Blocked',
-    done: 'Done',
-    cancelled: 'Cancelled',
-    archived: 'Archived'
-  };
-  return labels[status] || status;
-}
+// Helpers импортируются из utils/helpers.js
 
 function getNextActionText(status) {
   const s = String(status || '').toLowerCase();
