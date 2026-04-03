@@ -4,4 +4,4 @@ fastapi>=0.115.0,<1
 uvicorn[standard]>=0.30.0,<1
 httpx>=0.27.0,<1
 pytest>=8.0.0,<9
-pytest-xml>=0.2.0,<1
+pytest-xml>=0.1.1
