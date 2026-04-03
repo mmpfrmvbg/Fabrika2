@@ -20,6 +20,7 @@ import { VisionCreatorComponent } from './components/VisionCreator.js';
 import { autoLaunchVision, stopAutoLaunch } from './autonomous/autoLaunch.js';
 import { Storage, StorageKeys, initializeStorage } from './storage.js';
 import { escapeHtml, formatTime, showFactoryToast, getStatusLabel, isEmpty, getSafe } from './utils/helpers.js';
+import { initializeAccessibility } from './utils/accessibility.js';
 import { api } from './api/client.js';
 
 // ═══════════════════════════════════════════════════════
@@ -548,8 +549,8 @@ window.askQwenAboutEntity = async (type, id) => {
   
   // Показать toast
   const entity = type === 'work_item' 
-    ? store.state.workItems.find(w => w.id === id)
-    : store.state.runs.find(r => r.id === id);
+    ? store.state.workItems?.find(w => w.id === id)
+    : store.state.runs?.find(r => r.id === id);
   
   const title = entity?.title || entity?.id?.slice(0, 8) || id.slice(0, 8);
   showFactoryToast(`Контекст: ${type} ${title}...`, 'ok');
@@ -817,6 +818,9 @@ function withErrorBoundary(Component, name) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('[Factory] Initializing...');
+  
+  // Инициализация accessibility
+  initializeAccessibility();
   
   // Инициализация хранилища
   initializeStorage();

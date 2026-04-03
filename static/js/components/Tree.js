@@ -147,7 +147,7 @@ export function TreeComponent(container) {
           store.selectWorkItem(id);
           // Открыть детальную панель если есть
           if (window.openDetail) {
-            const wi = store.state.workItems.find(w => w.id === id);
+            const wi = store.state.workItems?.find(w => w.id === id);
             if (wi) window.openDetail(wi);
           }
         }

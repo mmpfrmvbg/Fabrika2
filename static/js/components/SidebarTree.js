@@ -112,7 +112,7 @@ export function SidebarTreeComponent(container) {
     
     // Открыть detail panel если есть
     if (window.openDetail) {
-      const wi = store.state.workItems.find(w => w.id === visionId);
+      const wi = store.state.workItems?.find(w => w.id === visionId);
       if (wi) window.openDetail(wi);
     }
     

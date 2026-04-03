@@ -53,7 +53,7 @@ export function DetailPanelComponent(container) {
   async function loadDetailData(workItemId) {
     if (!workItemId) return;
 
-    const wi = store.state.workItems.find(w => w.id === workItemId);
+    const wi = store.state.workItems?.find(w => w.id === workItemId);
     if (!wi) return;
 
     currentWorkItem = wi;
@@ -530,7 +530,7 @@ function getChildrenStatusSummary(children) {
 }
 
 function getParentTitle(parentId) {
-  const parent = store.state.workItems.find(w => w.id === parentId);
+  const parent = store.state.workItems?.find(w => w.id === parentId);
   return parent ? escapeHtml(parent.title || parent.kind || parentId) : 'Не найдено';
 }
 
@@ -589,7 +589,7 @@ window.saveDetailTitleEdit = async () => {
   try {
     await api.patchWorkItem(currentWorkItem.id, { title: newTitle });
     // Обновляем в store
-    const idx = store.state.workItems.findIndex(w => w.id === currentWorkItem.id);
+    const idx = store.state.workItems?.findIndex(w => w.id === currentWorkItem.id);
     if (idx !== -1) {
       store.state.workItems[idx].title = newTitle;
     }
