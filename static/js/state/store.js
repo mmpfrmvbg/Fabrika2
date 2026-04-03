@@ -42,6 +42,14 @@ export const store = {
     activePage: 'dashboard',
     apiConnected: false,
     apiError: null,
+    loading: {
+      tree: false,
+      journal: false,
+      workItems: false,
+      visions: false,
+      runs: false,
+      analytics: false
+    },
 
     // Orchestrator
     orchestrator: {
@@ -104,15 +112,21 @@ export const store = {
    * Загрузить дерево задач
    */
   async loadTree() {
+    this.update({ loading: { ...this.state.loading, tree: true } });
     try {
       const tree = await api.getTree();
-      this.update({ 
+      this.update({
         tree: this._normalizeArray(tree),
-        apiConnected: true, 
-        apiError: null 
+        apiConnected: true,
+        apiError: null,
+        loading: { ...this.state.loading, tree: false }
       });
     } catch (error) {
-      this.update({ apiConnected: false, apiError: error.message });
+      this.update({ 
+        apiConnected: false, 
+        apiError: error.message,
+        loading: { ...this.state.loading, tree: false }
+      });
       console.error('[Store] Failed to load tree:', error);
     }
   },

@@ -5,6 +5,7 @@
 
 import { store, subscribe } from '../state/store.js';
 import { api } from '../api/client.js';
+import { escapeHtml, getStatusLabel, formatTime } from '../utils/helpers.js';
 
 // Состояние компонента
 let currentWorkItem = null;
@@ -185,7 +186,7 @@ export function DetailPanelComponent(container) {
       if (!curId || seen.has(curId)) break;
       seen.add(curId);
       
-      const item = store.state.workItems.find(w => w.id === curId);
+      const item = store.state.workItems?.find(w => w.id === curId);
       if (item) {
         chain.push({ id: curId, label: item.title || item.kind || curId });
       }

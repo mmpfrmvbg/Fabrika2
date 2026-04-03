@@ -168,16 +168,19 @@ function isVisionComplete(queue) {
  */
 function handleVisionComplete(visionId) {
   console.log('[AutoLaunch] Vision complete:', visionId);
-  
+
   stopMonitoring();
   launchState.isRunning = false;
-  
+
+  // Переход на ResultView
+  if (window.showResultView) {
+    window.showResultView(visionId);
+  }
+
   // Уведомление пользователя
   if (window.showFactoryToast) {
     window.showFactoryToast('Vision завершён! 🎉', 'ok');
   }
-  
-  // TODO: Переход на ResultView (Phase 6)
 }
 
 /**

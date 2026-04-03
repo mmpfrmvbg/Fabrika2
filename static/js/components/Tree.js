@@ -4,6 +4,7 @@
  */
 
 import { store, subscribe } from '../state/store.js';
+import { escapeHtml, getStatusLabel } from '../utils/helpers.js';
 import { api } from '../api/client.js';
 
 // Состояние фильтров
@@ -193,7 +194,7 @@ export function TreeComponent(container) {
   };
   
   subscribeToStore();
-  
+
   return () => { if (unsubscribe) unsubscribe(); };
 }
 
@@ -288,31 +289,4 @@ function collectAtomsUnderVision(visionId) {
   
   walk(visionId);
   return atoms;
-}
-
-// ═══════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════
-function getStatusLabel(status) {
-  const labels = {
-    draft: 'Draft',
-    planned: 'Planned',
-    ready_for_judge: '→ Judge',
-    judge_rejected: 'Judge ✗',
-    ready_for_work: 'Ready',
-    in_progress: 'Running',
-    in_review: 'In Review',
-    review_rejected: 'Review ✗',
-    blocked: 'Blocked',
-    done: 'Done',
-    cancelled: 'Cancelled'
-  };
-  return labels[status] || status;
-}
-
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }

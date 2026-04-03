@@ -705,6 +705,15 @@ window.navigateLogPage = () => {
   showFactoryToast('Переход к журналу', 'ok');
 };
 
+window.showResultView = (visionId) => {
+  const vision = store.state.visions?.find(v => v.id === visionId);
+  if (vision) {
+    store.selectWorkItem(visionId);
+    // Переключаемся на autonomous mode и показываем ResultView
+    window.switchToAutonomousMode();
+  }
+};
+
 // ═══════════════════════════════════════════════════════
 // ANALYTICS
 // ═══════════════════════════════════════════════════════
@@ -783,6 +792,23 @@ function safeRender(fn, fallbackMessage = 'Ошибка рендеринга') {
       </div>
     `;
   }
+}
+
+/**
+ * Error Boundary для компонентов
+ * @param {Function} Component - Компонент
+ * @param {string} name - Имя компонента
+ * @returns {Function} Обёрнутый компонент
+ */
+function withErrorBoundary(Component, name) {
+  return function(...args) {
+    try {
+      return Component(...args);
+    } catch (error) {
+      console.error(`[${name}] Error:`, error);
+      return `<div style="padding:20px;color:var(--error)">⚠️ Ошибка в ${name}</div>`;
+    }
+  };
 }
 
 // ═══════════════════════════════════════════════════════

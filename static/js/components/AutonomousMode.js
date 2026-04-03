@@ -5,6 +5,7 @@
 
 import { store, subscribe } from '../state/store.js';
 import { ProgressViewComponent } from './ProgressView.js';
+import { ResultViewComponent } from './ResultView.js';
 
 // Состояние компонента
 let currentVision = null;
@@ -88,6 +89,13 @@ export function AutonomousModeComponent(container) {
     }
     
     const progress = calculateProgress(currentVision);
+    
+    // Если Vision завершён — показываем ResultView
+    if (progress.percent >= 100) {
+      renderResultView();
+      return;
+    }
+    
     const eta = calculateETA(progress);
     const recentActivity = getRecentActivity();
     
@@ -107,6 +115,20 @@ export function AutonomousModeComponent(container) {
     }
     
     attachEventListeners();
+  }
+
+  function renderResultView() {
+    container.innerHTML = `
+      <div class="autonomous-mode-container">
+        ${renderHeader()}
+        <div id="result-view-container"></div>
+      </div>
+    `;
+    
+    const resultContainer = document.getElementById('result-view-container');
+    if (resultContainer && currentVision) {
+      ResultViewComponent(resultContainer, currentVision);
+    }
   }
 
   function renderEmptyState() {
