@@ -38,7 +38,12 @@ export function DashboardComponent(container) {
     }
 
     // Journal preview - нормализуем массив
-    const journalItems = journal?.items || Array.isArray(journal) ? journal : [];
+    let journalItems = [];
+    if (journal?.items && Array.isArray(journal.items)) {
+      journalItems = journal.items;
+    } else if (Array.isArray(journal)) {
+      journalItems = journal;
+    }
     const journalContainer = document.getElementById('dashboard-log-feed');
     if (journalContainer) {
       journalContainer.innerHTML = renderJournalPreview({ items: journalItems });

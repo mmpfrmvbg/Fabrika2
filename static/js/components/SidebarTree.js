@@ -138,26 +138,4 @@ export function SidebarTreeComponent(container) {
   };
 }
 
-// ═══════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════
-
-function getStatusLabel(status) {
-  const labels = {
-    draft: 'D',
-    planned: 'P',
-    ready_for_judge: 'J',
-    judge_rejected: '✗',
-    ready_for_work: 'R',
-    in_progress: '⏳',
-    in_review: 'Rv',
-    review_rejected: '✗',
-    blocked: '⚠',
-    done: '✓',
-    cancelled: '✗',
-    archived: '📦'
-  };
-  return labels[status] || status;
-}
-
 // Helpers импортируются из utils/helpers.js

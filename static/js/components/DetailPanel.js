@@ -60,12 +60,12 @@ export function DetailPanelComponent(container) {
 
     try {
       // Загружаем расширенные данные
-      const [detail, runsRes, eventsRes, commentsRes] = await Promise.all([
-        api.getWorkItem(workItemId).catch(() => null),
-        api.getRuns({ work_item_id: workItemId }).catch(() => ({ items: [] })),
-        api.getWorkItemEvents(workItemId).catch(() => ({ items: [] })),
-        api.addComment // Это не тот endpoint, но проверим наличие
-      ]);
+      const detail = await api.getWorkItem(workItemId).catch(() => null);
+      const runsRes = await api.getRuns({ work_item_id: workItemId }).catch(() => ({ items: [] }));
+      const eventsRes = await api.getWorkItemEvents(workItemId).catch((e) => {
+        console.warn('[DetailPanel] Events not available:', e.message);
+        return { items: [] };
+      });
 
       detailData = {
         children: detail?.children || [],
