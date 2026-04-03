@@ -425,7 +425,7 @@ function descendantIds(rootId) {
   const out = new Set();
   const walk = (id) => {
     out.add(id);
-    const children = store.state.workItems.filter(w => w.parent_id === id);
+    const children = store.state.workItems?.filter(w => w.parent_id === id) || [];
     children.forEach(ch => walk(ch.id));
   };
   walk(rootId);

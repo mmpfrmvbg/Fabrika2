@@ -5,6 +5,7 @@
 
 import { store, subscribe } from '../state/store.js';
 import { api } from '../api/client.js';
+import { escapeHtml, formatDuration } from '../utils/helpers.js';
 
 let chartThroughput = null;
 let chartStages = null;
@@ -285,9 +286,4 @@ function fmtPercent(n) {
   return (n * 100).toFixed(1) + '%';
 }
 
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+// Helpers импортируются из utils/helpers.js

@@ -6,6 +6,7 @@
 import { store, subscribe } from '../state/store.js';
 import { ProgressViewComponent } from './ProgressView.js';
 import { ResultViewComponent } from './ResultView.js';
+import { escapeHtml, formatTimeAgo } from '../utils/helpers.js';
 
 // Состояние компонента
 let currentVision = null;
@@ -332,17 +333,10 @@ export function AutonomousModeComponent(container) {
     const seconds = Math.floor((new Date() - new Date(iso)) / 1000);
     if (seconds < 60) return `${seconds}с назад`;
     const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}м назад`;
-    const hours = Math.floor(minutes / 60);
     return `${hours}ч назад`;
   }
 
-  function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
+  // Helpers импортируются из utils/helpers.js
 
   // ═══════════════════════════════════════════════════════
   // INIT

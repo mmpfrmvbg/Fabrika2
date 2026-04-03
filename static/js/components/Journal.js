@@ -5,6 +5,7 @@
 
 import { store, subscribe } from '../state/store.js';
 import { debounce } from '../utils/debounce.js';
+import { escapeHtml, formatTime, getStatusLabel } from '../utils/helpers.js';
 
 const PAGE_SIZE = 100;
 let currentPage = 0;
@@ -246,22 +247,11 @@ ${entry.payload && Object.keys(entry.payload).length > 0 ? `<div style="margin-b
   return () => { if (unsubscribe) unsubscribe(); };
 }
 
-// Helpers
-function formatTime(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-}
+// Helpers импортируются из utils/helpers.js
 
 function monoId(raw) {
   if (!raw) return '—';
   const s = String(raw);
   const short = s.length > 8 ? s.slice(0, 8) + '…' : s;
   return `<span class="mono-id" title="${escapeHtml(s)}">${escapeHtml(short)}</span>`;
-}
-
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }

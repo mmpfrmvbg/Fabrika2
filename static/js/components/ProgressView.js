@@ -4,6 +4,7 @@
  */
 
 import { store, subscribe } from '../state/store.js';
+import { getStatusLabel, formatDuration } from '../utils/helpers.js';
 
 // Кэширование ETA
 let etaCache = {
@@ -224,12 +225,7 @@ export function ProgressViewComponent(container) {
     return formatted;
   }
 
-  function formatDuration(ms) {
-    if (ms < 60000) return '< 1 мин';
-    if (ms < 3600000) return `~${Math.round(ms / 60000)} мин`;
-    if (ms < 86400000) return `~${Math.round(ms / 3600000)} ч`;
-    return `~${Math.round(ms / 86400000)} дн`;
-  }
+  // Helpers импортируются из utils/helpers.js
 
   // ═══════════════════════════════════════════════════════
   // INIT

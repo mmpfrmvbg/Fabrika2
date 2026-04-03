@@ -5,6 +5,7 @@
 
 import { api } from '../api/client.js';
 import { debounce } from '../utils/debounce.js';
+import { showFactoryToast } from '../utils/helpers.js';
 
 // Состояние компонента
 let isEstimating = false;
@@ -253,11 +254,4 @@ window.onVisionTitleChange = debounce(() => {
   }
 }, 500);
 
-function showFactoryToast(message, kind = 'ok') {
-  const el = document.getElementById('factory-toast');
-  if (!el) return;
-  el.textContent = message;
-  el.className = 'factory-toast visible ' + (kind === 'err' ? 'err' : 'ok');
-  clearTimeout(el._hideT);
-  el._hideT = setTimeout(() => { el.classList.remove('visible'); }, 3000);
-}
+// Helpers импортируются из utils/helpers.js

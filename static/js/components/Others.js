@@ -5,6 +5,7 @@
 
 import { store, subscribe } from '../state/store.js';
 import { api } from '../api/client.js';
+import { escapeHtml, formatTime, getStatusLabel } from '../utils/helpers.js';
 
 // ═══════════════════════════════════════════════════════
 // AGENTS COMPONENT
@@ -442,14 +443,4 @@ function getPriorityColor(score) {
   return 'var(--success)';
 }
 
-function formatTime(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-}
-
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+// Helpers импортируются из utils/helpers.js

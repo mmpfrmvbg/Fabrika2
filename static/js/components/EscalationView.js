@@ -3,6 +3,8 @@
  * Модальное окно эскалации ошибок пользователю
  */
 
+import { escapeHtml } from '../utils/helpers.js';
+
 /**
  * EscalationView Component
  * @param {HTMLElement} container - контейнер для модалки
@@ -92,13 +94,6 @@ export function EscalationViewComponent(container, error) {
         </button>
       </div>
     `;
-  }
-
-  function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
   }
 
   return {

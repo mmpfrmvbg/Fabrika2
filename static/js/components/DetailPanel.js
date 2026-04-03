@@ -556,25 +556,7 @@ function getEventDotClass(severity) {
   return 'done';
 }
 
-function formatTime(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatDuration(start, end) {
-  if (!end) return 'в работе…';
-  const ms = new Date(end) - new Date(start);
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}с`;
-  return `${Math.floor(s / 60)}м ${s % 60}с`;
-}
-
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+// Helpers импортируются из utils/helpers.js
 
 // ═══════════════════════════════════════════════════════
 // GLOBAL FUNCTIONS (для onclick из HTML)

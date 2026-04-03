@@ -4,6 +4,7 @@
  */
 
 import { store, subscribe } from '../state/store.js';
+import { escapeHtml, getStatusLabel } from '../utils/helpers.js';
 
 /**
  * Sidebar Quick Jump Component
@@ -159,18 +160,4 @@ function getStatusLabel(status) {
   return labels[status] || status;
 }
 
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function showFactoryToast(message, kind = 'ok') {
-  const el = document.getElementById('factory-toast');
-  if (!el) return;
-  el.textContent = message;
-  el.className = 'factory-toast visible ' + (kind === 'err' ? 'err' : 'ok');
-  clearTimeout(el._hideT);
-  el._hideT = setTimeout(() => { el.classList.remove('visible'); }, 3000);
-}
+// Helpers импортируются из utils/helpers.js

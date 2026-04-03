@@ -5,6 +5,7 @@
 
 import { store, subscribe } from '../state/store.js';
 import { api } from '../api/client.js';
+import { escapeHtml, formatTime, formatDuration, getStatusLabel } from '../utils/helpers.js';
 
 export function DashboardComponent(container) {
   let unsubscribe = null;
@@ -364,38 +365,4 @@ function formatTime(iso) {
   return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }
 
-// ═══════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════
-
-function getStatusLabel(status) {
-  const labels = {
-    draft: 'Draft',
-    planned: 'Planned',
-    ready_for_judge: '→ Judge',
-    judge_rejected: 'Judge ✗',
-    ready_for_work: 'Ready',
-    in_progress: 'Running',
-    in_review: 'In Review',
-    review_rejected: 'Review ✗',
-    blocked: 'Blocked',
-    done: 'Done',
-    cancelled: 'Cancelled',
-    archived: 'Archived'
-  };
-  return labels[status] || status;
-}
-
-function formatDuration(seconds) {
-  if (!seconds) return '—';
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return mins > 0 ? `${mins}м ${secs}с` : `${secs}с`;
-}
-
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+// Helpers импортируются из utils/helpers.js

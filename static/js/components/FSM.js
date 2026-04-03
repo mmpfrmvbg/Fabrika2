@@ -4,6 +4,7 @@
  */
 
 import { store, subscribe } from '../state/store.js';
+import { escapeHtml, getStatusLabel } from '../utils/helpers.js';
 
 // Конфигурация узлов FSM
 const STATUS_CONFIG = {
@@ -230,13 +231,4 @@ function calculateStateCounts(workItems) {
   return counts;
 }
 
-function getStatusLabel(status) {
-  return STATUS_CONFIG[status]?.label || status;
-}
-
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+// Helpers импортируются из utils/helpers.js

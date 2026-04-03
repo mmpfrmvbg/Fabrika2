@@ -4,6 +4,7 @@
  */
 
 import { store, subscribe } from '../state/store.js';
+import { escapeHtml, formatTime } from '../utils/helpers.js';
 
 /**
  * Chat Component
@@ -193,21 +194,9 @@ export function ChatComponent(container) {
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
   }
-  
-  function formatTime(iso) {
-    return new Date(iso).toLocaleTimeString('ru-RU', { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-  }
-  
-  function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-  
+
+  // Helpers импортируются из utils/helpers.js
+
   // ═══════════════════════════════════════════════════════
   // INIT
   // ═══════════════════════════════════════════════════════

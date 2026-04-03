@@ -5,6 +5,7 @@
 
 import { store, subscribe } from '../state/store.js';
 import { api } from '../api/client.js';
+import { escapeHtml, formatTime } from '../utils/helpers.js';
 
 export function ForgeComponent(container) {
   let unsubscribe = null;
@@ -106,13 +107,8 @@ export function ForgeComponent(container) {
   }
   
   subscribeToStore();
-  
+
   return () => { if (unsubscribe) unsubscribe(); };
 }
 
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+// Helpers импортируются из utils/helpers.js
