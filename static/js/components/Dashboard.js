@@ -360,9 +360,4 @@ function renderRunsTable() {
   }).join('');
 }
 
-function formatTime(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-}
-
 // Helpers импортируются из utils/helpers.js

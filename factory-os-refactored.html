@@ -345,5 +345,22 @@
 <!-- Main JS Module -->
 <script type="module" src="/static/js/main.js"></script>
 
+<!-- Global function stubs (before module loads) -->
+<script>
+// Stub functions to prevent ReferenceError before main.js loads
+window.showPage = window.showPage || function(page, btn) { console.log('[Stub] showPage:', page); };
+window.goPage = window.goPage || function(page) { console.log('[Stub] goPage:', page); };
+window.toggleChat = window.toggleChat || function() { console.log('[Stub] toggleChat'); };
+window.openVisionModal = window.openVisionModal || function() { console.log('[Stub] openVisionModal'); };
+window.closeVisionModal = window.closeVisionModal || function() { console.log('[Stub] closeVisionModal'); };
+window.submitNewVision = window.submitNewVision || function() { console.log('[Stub] submitNewVision'); };
+window.toggleOrchestratorMenu = window.toggleOrchestratorMenu || function(e) { console.log('[Stub] toggleOrchestratorMenu'); };
+window.closeOrchestratorMenu = window.closeOrchestratorMenu || function() { console.log('[Stub] closeOrchestratorMenu'); };
+window.orchestratorStart = window.orchestratorStart || function() { console.log('[Stub] orchestratorStart'); };
+window.orchestratorStop = window.orchestratorStop || function() { console.log('[Stub] orchestratorStop'); };
+window.orchestratorManualTick = window.orchestratorManualTick || function() { console.log('[Stub] orchestratorManualTick'); };
+window.manualDashboardRefresh = window.manualDashboardRefresh || function() { console.log('[Stub] manualDashboardRefresh'); };
+</script>
+
 </body>
 </html>
