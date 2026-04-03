@@ -22,7 +22,7 @@ def test_mark_atom_ready_for_forge_then_select(tmp_path) -> None:
         "a",
         files=[{"path": "factory/x.py", "intent": "modify", "description": None}],
     )
-    mark_atom_ready_for_forge(conn, f["sm"], aid, orchestrator=f["orchestrator"])
+    mark_atom_ready_for_forge(conn, f["sm"], aid, orchestrator=None)
     row = select_next_atom_for_forge(conn)
     assert row is not None
     assert row["id"] == aid
@@ -50,5 +50,5 @@ def test_mark_atom_ready_for_forge_idempotent(tmp_path) -> None:
         "a",
         files=[{"path": "a.py", "intent": "modify", "description": None}],
     )
-    mark_atom_ready_for_forge(conn, f["sm"], aid, orchestrator=f["orchestrator"])
-    mark_atom_ready_for_forge(conn, f["sm"], aid, orchestrator=f["orchestrator"])
+    mark_atom_ready_for_forge(conn, f["sm"], aid, orchestrator=None)
+    mark_atom_ready_for_forge(conn, f["sm"], aid, orchestrator=None)
