@@ -264,6 +264,7 @@ def ensure_schema(db_path: Path = DB_PATH) -> None:
     try:
         conn0 = sqlite3.connect(str(db_path), timeout=30.0)
         try:
+            conn0.execute("PRAGMA journal_mode = WAL")
             conn0.execute("PRAGMA busy_timeout = 15000")
             if _max_migration_version(conn0) >= _SCHEMA_VERSION:
                 return
@@ -469,7 +470,7 @@ def get_connection(db_path: Path | str = DB_PATH, *, read_only: bool = False) ->
         conn.execute("PRAGMA query_only = ON")
         return conn
 
-    conn = sqlite3.connect(str(p), timeout=60.0)
+    conn = sqlite3.connect(str(p), timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
