@@ -762,7 +762,7 @@ FROM event_log
 WHERE severity IN ('error','fatal')
   AND event_time > strftime('%Y-%m-%dT%H:%M:%f', 'now', '-1 hour')
 ORDER BY event_time DESC;
-""";
+"""
 
 # Существующая БД: CREATE VIEW IF NOT EXISTS не обновляет определение — пересоздаём в migrate_schema.
 V_API_USAGE_TODAY_RECREATE = """

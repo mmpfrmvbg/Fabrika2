@@ -9,15 +9,13 @@ import asyncio
 import json
 import uuid
 import time
-from pathlib import Path
 from typing import AsyncGenerator, Callable, Optional
 from datetime import datetime, timezone
 
-from .config import AccountManager, resolve_db_path
+from .config import AccountManager
 from .db import get_connection
-from .qwen_cli_runner import run_qwen_cli
 from .logging import FactoryLogger
-from .models import EventType, Role, Severity
+from .models import EventType, Severity
 
 # Хранилище активных чат-сессий с TTL
 _active_chats: dict[str, dict] = {}

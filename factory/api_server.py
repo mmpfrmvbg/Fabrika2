@@ -47,7 +47,7 @@ from .dashboard_unified_journal import JournalFilters, api_journal_query
 from .analytics_api import compute_analytics
 from .workers_status import workers_status_payload
 from .work_items_tree import build_work_items_tree, subtree_for_root_id
-from .db import ensure_schema, gen_id, get_connection, resolve_effective_run_id
+from .db import ensure_schema, get_connection, resolve_effective_run_id
 from .logging import FactoryLogger
 from .models import EventType, Role
 from .work_items import WorkItemOps

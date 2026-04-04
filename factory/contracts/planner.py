@@ -39,4 +39,3 @@ class PlannerOutput(BaseModel):
 
     items: List[PlannerOutputItem]
     reasoning: str = ""
-

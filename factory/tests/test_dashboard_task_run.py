@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sqlite3
 
-import pytest
 
 from factory.dashboard_task_run import accept_dashboard_task_run
 from factory.db import gen_id, init_db

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -91,4 +90,3 @@ class PlannerDryRunTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .composition import wire
 from .db import gen_id
-from .models import QueueName, Role, WorkItemStatus
+from .models import QueueName, WorkItemStatus
 
 
 def _seed_review_only(conn, wi_id: str) -> None:

@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 from ..db import gen_id, payload_hash, stable_json_dumps
-from ..models import EventType, Role, RunStatus, RunType, Severity, StepKind
+from ..models import EventType, Role, RunStatus, RunType, Severity
 
 if TYPE_CHECKING:
     from ..logging import FactoryLogger

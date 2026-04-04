@@ -15,7 +15,7 @@ from factory.forge_sandbox import (
     prepare_sandbox,
     safe_path_under_workspace,
 )
-from factory.models import Role, RunStatus, RunType, WorkItemStatus
+from factory.models import Role, RunType, WorkItemStatus
 
 
 class ForgeSandboxTest(unittest.TestCase):

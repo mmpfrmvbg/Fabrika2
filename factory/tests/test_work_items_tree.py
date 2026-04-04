@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from factory.db import gen_id, init_db
+from factory.db import init_db
 from factory.models import EventType
 from factory.work_items_tree import build_work_items_tree
 

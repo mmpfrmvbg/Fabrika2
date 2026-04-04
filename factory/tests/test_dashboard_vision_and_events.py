@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 
-import pytest
 
 from factory.dashboard_api import _events
 from factory.dashboard_vision import api_visions_list, post_create_vision
