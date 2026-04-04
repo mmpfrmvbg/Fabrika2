@@ -14,6 +14,36 @@ DB_PATH = Path("factory.db")
 _PROEKT_ROOT = Path(__file__).resolve().parent.parent
 
 
+def env_int(name: str, default: int, *, minimum: int | None = None) -> int:
+    """Read integer from env with fallback and optional lower bound."""
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        value = default
+    else:
+        try:
+            value = int(raw)
+        except ValueError:
+            value = default
+    if minimum is not None:
+        value = max(minimum, value)
+    return value
+
+
+def env_float(name: str, default: float, *, minimum: float | None = None) -> float:
+    """Read float from env with fallback and optional lower bound."""
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        value = default
+    else:
+        try:
+            value = float(raw)
+        except ValueError:
+            value = default
+    if minimum is not None:
+        value = max(minimum, value)
+    return value
+
+
 def resolve_db_path(path: Path | None = None) -> Path:
     """
     Абсолютный путь к SQLite фабрики.
@@ -171,6 +201,15 @@ MAX_CONCURRENT_REVIEW_RUNS = int(os.environ.get("FACTORY_MAX_CONCURRENT_REVIEW_R
 ORCHESTRATOR_ARCHITECT_SCAN_TICKS = int(
     os.environ.get("FACTORY_ARCHITECT_SCAN_TICKS", "10")
 )
+API_HOST = os.environ.get("FACTORY_API_HOST", "127.0.0.1")
+API_PORT = env_int("FACTORY_API_PORT", 8000, minimum=1)
+WORKER_POLL_SECONDS = env_float("FACTORY_WORKER_POLL", 5.0, minimum=0.5)
+WORKER_STUCK_TIMEOUT_SECONDS = env_float("FACTORY_WORKER_TIMEOUT", 300.0, minimum=60.0)
+SQLITE_TIMEOUT_SECONDS = env_float("FACTORY_SQLITE_TIMEOUT_SECONDS", 30.0, minimum=1.0)
+SQLITE_BUSY_TIMEOUT_MS = env_int("FACTORY_SQLITE_BUSY_TIMEOUT_MS", 30000, minimum=1000)
+QWEN_DECOMPOSE_TIMEOUT_SECONDS = env_int("FACTORY_QWEN_DECOMPOSE_TIMEOUT", 300, minimum=1)
+QWEN_FIX_TIMEOUT_SECONDS = env_int("FACTORY_QWEN_FIX_TIMEOUT", 120, minimum=1)
+ORCHESTRATOR_TICK_INTERVAL_SECONDS = env_float("FACTORY_TICK_INTERVAL", 3.0, minimum=0.2)
 
 from .models import EventType, Severity
 

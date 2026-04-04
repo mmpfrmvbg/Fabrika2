@@ -12,7 +12,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator
 
-from .config import ACCOUNTS, DB_PATH
+from .config import (
+    ACCOUNTS,
+    DB_PATH,
+    SQLITE_BUSY_TIMEOUT_MS,
+    SQLITE_TIMEOUT_SECONDS,
+)
 from .models import Role
 from .schema_ddl import DDL, V_API_USAGE_TODAY_RECREATE
 
@@ -20,8 +25,8 @@ from .schema_ddl import DDL, V_API_USAGE_TODAY_RECREATE
 # 4=fsm creator_cancelled/archive_sweep, 5=judge_rejected release locks, 6=cleanup stale locks,
 # 7=forensic_tracing_fields, 8=runs_retry_count, 9=runs_source_run_id_dry_run, 10=work_items heartbeat
 _SCHEMA_VERSION = 10
-_SQLITE_TIMEOUT_SEC = 30.0
-_SQLITE_BUSY_TIMEOUT_MS = 30000
+_SQLITE_TIMEOUT_SEC = SQLITE_TIMEOUT_SECONDS
+_SQLITE_BUSY_TIMEOUT_MS = SQLITE_BUSY_TIMEOUT_MS
 _LOG = logging.getLogger("factory.db")
 
 # Migration v2: self-improvement candidates (idempotent CREATE TABLE IF NOT EXISTS)
@@ -104,7 +109,7 @@ def _connect_sqlite(
     )
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA busy_timeout = 30000")
+    conn.execute(f"PRAGMA busy_timeout = {_SQLITE_BUSY_TIMEOUT_MS}")
     conn.execute("PRAGMA wal_autocheckpoint = 100")
     return conn
 

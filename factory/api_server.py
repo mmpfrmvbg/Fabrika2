@@ -25,11 +25,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Body, Depends, FastAPI, HTTPException, Path as FastPath, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, ValidationError
 
-from .config import load_dotenv, resolve_db_path, AccountManager
+from .config import (
+    API_HOST,
+    API_PORT,
+    ORCHESTRATOR_TICK_INTERVAL_SECONDS,
+    QWEN_DECOMPOSE_TIMEOUT_SECONDS,
+    QWEN_FIX_TIMEOUT_SECONDS,
+    AccountManager,
+    load_dotenv,
+    resolve_db_path,
+)
 from .composition import wire
 from .dashboard_api import _agents, _fsm_stub
 from .dashboard_live_read import api_forge_inbox_simple
@@ -57,6 +67,45 @@ load_dotenv()
 # Глобальный logger для endpoint (создаётся при первом использовании)
 _logger: FactoryLogger | None = None
 _LOG = logging.getLogger("factory.api_server")
+
+
+class WorkItemPatchRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=500)
+    description: str | None = Field(default=None, max_length=10000)
+
+
+class BulkArchiveRequest(BaseModel):
+    ids: list[str] | None = None
+    filter: str | None = None
+
+
+class ImprovementReviewRequest(BaseModel):
+    reviewed_by: str | None = Field(default="dashboard", min_length=1, max_length=128)
+
+
+class VisionRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=500)
+    description: str | None = Field(default=None, max_length=10000)
+
+
+class ChatCreateRequest(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=20000)
+    context: dict[str, Any] = Field(default_factory=dict)
+    work_item_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class QwenFixRequest(BaseModel):
+    type: str | None = Field(default="unknown", max_length=128)
+    message: str = Field(..., min_length=1, max_length=10000)
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+def _valid_id(value: str, field: str) -> str:
+    v = value.strip()
+    if not v:
+        raise HTTPException(status_code=400, detail=f"{field} must be a non-empty string")
+    return v
+
 
 def _get_logger(conn: sqlite3.Connection | None = None) -> FactoryLogger:
     """Получить logger для endpoint."""
@@ -86,14 +135,7 @@ def _utc_now_iso() -> str:
 
 
 def _tick_interval_seconds() -> float:
-    raw = os.environ.get("FACTORY_TICK_INTERVAL", "").strip()
-    if not raw:
-        return 3.0
-    try:
-        v = float(raw)
-        return 0.2 if v < 0.2 else v
-    except ValueError:
-        return 3.0
+    return ORCHESTRATOR_TICK_INTERVAL_SECONDS
 
 
 class _OrchestratorThread:
@@ -506,7 +548,8 @@ _EDITABLE_STATUSES = frozenset(
 
 @app.post("/api/work-items/{wi_id}/cancel")
 def post_work_item_cancel(
-    wi_id: str, _: None = Depends(require_api_key)
+    wi_id: str = FastPath(..., min_length=1, max_length=128),
+    _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
     """FSM creator_cancelled + каскад по поддереву (post-order)."""
     factory = wire(_db_path())
@@ -536,7 +579,8 @@ def post_work_item_cancel(
 
 @app.post("/api/work-items/{wi_id}/archive")
 def post_work_item_archive(
-    wi_id: str, _: None = Depends(require_api_key)
+    wi_id: str = FastPath(..., min_length=1, max_length=128),
+    _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
     """FSM archive_sweep для done и всех done-потомков."""
     factory = wire(_db_path())
@@ -566,12 +610,12 @@ def post_work_item_archive(
 
 @app.patch("/api/work-items/{wi_id}")
 def patch_work_item(
-    wi_id: str,
-    body: dict[str, Any] = Body(...),
+    wi_id: str = FastPath(..., min_length=1, max_length=128),
+    body: WorkItemPatchRequest = Body(...),
     _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
-    title = body.get("title")
-    description = body.get("description")
+    title = body.title
+    description = body.description
     if title is None and description is None:
         raise HTTPException(
             status_code=400, detail="expected title and/or description"
@@ -631,7 +675,8 @@ def patch_work_item(
 
 @app.delete("/api/work-items/{wi_id}")
 def delete_work_item_endpoint(
-    wi_id: str, _: None = Depends(require_api_key)
+    wi_id: str = FastPath(..., min_length=1, max_length=128),
+    _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
     conn = _open_rw()
     logger = FactoryLogger(conn)
@@ -649,12 +694,12 @@ def delete_work_item_endpoint(
 
 @app.post("/api/bulk/archive")
 def post_bulk_archive(
-    body: dict[str, Any] = Body(default={}),
+    body: BulkArchiveRequest = Body(default=BulkArchiveRequest()),
     _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
     """Архивирует несколько корней (обычно Vision в done)."""
-    ids: list[str] | None = body.get("ids")
-    filt = (body.get("filter") or "").strip()
+    ids = body.ids
+    filt = (body.filter or "").strip()
     factory = wire(_db_path())
     conn = factory["conn"]
     sm = factory["sm"]
@@ -662,7 +707,7 @@ def post_bulk_archive(
         if filt == "all_done_visions":
             target_ids = list_done_vision_roots_ready_to_archive(conn)
         elif isinstance(ids, list) and ids:
-            target_ids = [str(x) for x in ids]
+            target_ids = [_valid_id(str(x), "ids[]") for x in ids]
         else:
             raise HTTPException(
                 status_code=400,
@@ -689,7 +734,10 @@ def post_bulk_archive(
 
 
 @app.post("/api/work-items/{wi_id}/run")
-def post_work_item_run(wi_id: str, _: None = Depends(require_api_key)) -> dict[str, Any]:
+def post_work_item_run(
+    wi_id: str = FastPath(..., min_length=1, max_length=128),
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
     """Запуск forge для атома (тот же путь, что POST /api/tasks/…/forge-run в dashboard_api)."""
     from .dashboard_task_run import accept_dashboard_task_run
 
@@ -706,13 +754,16 @@ def post_work_item_run(wi_id: str, _: None = Depends(require_api_key)) -> dict[s
 
 
 @app.post("/api/tasks/{wi_id}/forge-run")
-def post_tasks_forge_run_compat(wi_id: str, _: None = Depends(require_api_key)) -> dict[str, Any]:
+def post_tasks_forge_run_compat(
+    wi_id: str = FastPath(..., min_length=1, max_length=128),
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
     """Совместимость с factory-os.html (старый путь)."""
     return post_work_item_run(wi_id)
 
 
 @app.get("/api/work-items/{wi_id}")
-def get_work_item(wi_id: str) -> dict[str, Any]:
+def get_work_item(wi_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
     conn = _open_ro()
     try:
         wi = conn.execute("SELECT * FROM work_items WHERE id = ?", (wi_id,)).fetchone()
@@ -769,7 +820,7 @@ def get_work_item(wi_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/tasks/{wi_id}")
-def get_task_bundle(wi_id: str) -> dict[str, Any]:
+def get_task_bundle(wi_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
     """Совместимость с factory-os.html (openDetail)."""
     conn = _open_ro()
     try:
@@ -814,20 +865,20 @@ def get_task_bundle(wi_id: str) -> dict[str, Any]:
 
 @app.get("/api/work_items")
 def work_items_legacy(id: str | None = None) -> dict[str, Any]:
-    if not id:
-        return {"work_item": None, "error": "id required"}
+    if not id or not id.strip():
+        raise HTTPException(status_code=400, detail="id required")
     conn = _open_ro()
     try:
         wi = conn.execute("SELECT * FROM work_items WHERE id = ?", (id,)).fetchone()
         if not wi:
-            return {"work_item": None, "error": "not found"}
+            raise HTTPException(status_code=404, detail="not found")
         return {"work_item": _row(wi)}
     finally:
         conn.close()
 
 
 @app.get("/api/work-items/{wi_id}/runs")
-def runs_for_work_item(wi_id: str) -> dict[str, Any]:
+def runs_for_work_item(wi_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
     conn = _open_ro()
     try:
         rows = conn.execute(
@@ -876,7 +927,7 @@ def list_runs(
 
 
 @app.get("/api/runs/{run_id}")
-def get_run_detail(run_id: str) -> dict[str, Any]:
+def get_run_detail(run_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
     conn = _open_ro()
     try:
         r = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
@@ -910,7 +961,7 @@ def get_run_detail(run_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/runs/{run_id}/steps")
-def get_run_steps(run_id: str) -> dict[str, Any]:
+def get_run_steps(run_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
     conn = _open_ro()
     try:
         effective_run_id = resolve_effective_run_id(conn, run_id) or run_id
@@ -926,7 +977,7 @@ def get_run_steps(run_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/runs/{run_id}/effective")
-def get_effective_run_id(run_id: str) -> dict[str, Any]:
+def get_effective_run_id(run_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
     conn = _open_ro()
     try:
         r = conn.execute("SELECT id FROM runs WHERE id = ?", (run_id,)).fetchone()
@@ -1260,11 +1311,11 @@ def list_improvements() -> dict[str, Any]:
 
 @app.post("/api/improvements/{ic_id}/approve")
 def approve_improvement(
-    ic_id: str,
-    body: dict[str, Any] = Body(default={}),
+    ic_id: str = FastPath(..., min_length=1, max_length=128),
+    body: ImprovementReviewRequest = Body(default=ImprovementReviewRequest()),
     _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
-    reviewed_by = str(body.get("reviewed_by") or "dashboard").strip() or "dashboard"
+    reviewed_by = str(body.reviewed_by or "dashboard").strip() or "dashboard"
     conn = _open_rw()
     try:
         row = conn.execute(
@@ -1290,7 +1341,10 @@ def approve_improvement(
 
 
 @app.post("/api/improvements/{ic_id}/reject")
-def reject_improvement(ic_id: str, _: None = Depends(require_api_key)) -> dict[str, Any]:
+def reject_improvement(
+    ic_id: str = FastPath(..., min_length=1, max_length=128),
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
     conn = _open_rw()
     try:
         row = conn.execute(
@@ -1311,7 +1365,10 @@ def reject_improvement(ic_id: str, _: None = Depends(require_api_key)) -> dict[s
 
 
 @app.post("/api/improvements/{ic_id}/convert")
-def convert_improvement(ic_id: str, _: None = Depends(require_api_key)) -> dict[str, Any]:
+def convert_improvement(
+    ic_id: str = FastPath(..., min_length=1, max_length=128),
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
     from .factory_introspect import FactoryIntrospector
 
     conn = _open_rw()
@@ -1433,18 +1490,18 @@ def visions() -> dict[str, Any]:
 
 @app.post("/api/visions")
 def create_vision(
-    body: dict[str, Any] = Body(...),
+    body: VisionRequest | dict[str, Any] = Body(...),
     _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
     """
     Создаёт Vision и запускает planner (синхронно, MVP).
     Ответ: ``ok``, ``id``, ``title``, ``tree`` (один корень Vision с детьми), ``tree_stats``, ``reasoning``.
     """
-    title = str(body.get("title") or "").strip()
+    payload = body if isinstance(body, VisionRequest) else VisionRequest.model_validate(body)
+    title = payload.title.strip()
     if not title:
         raise HTTPException(status_code=400, detail={"error": "title is required"})
-    description = body.get("description")
-    description = str(description).strip() if description is not None else None
+    description = payload.description.strip() if payload.description is not None else None
 
     conn: sqlite3.Connection | None = None
     try:
@@ -1524,16 +1581,17 @@ def create_vision(
 
 @app.post("/api/visions/{vision_id}/decompose")
 def decompose_vision_endpoint(
-    vision_id: str,
-    body: dict[str, Any] = Body(...),
+    vision_id: str = FastPath(..., min_length=1, max_length=128),
+    body: VisionRequest | dict[str, Any] = Body(...),
     _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
     """
     Авто-декомпозиция Vision через Qwen.
     Возвращает иерархию: epics → stories → tasks → atoms.
     """
-    title = str(body.get("title") or "").strip()
-    description = str(body.get("description") or "").strip()
+    payload = body if isinstance(body, VisionRequest) else VisionRequest.model_validate(body)
+    title = payload.title.strip()
+    description = (payload.description or "").strip()
     
     if not title:
         raise HTTPException(status_code=400, detail={"error": "title is required"})
@@ -1577,7 +1635,7 @@ Vision: {title}
     
     try:
         # Вызов Qwen CLI
-        result = run_qwen_cli(prompt=prompt, timeout=300)
+        result = run_qwen_cli(prompt=prompt, timeout=QWEN_DECOMPOSE_TIMEOUT_SECONDS)
         
         # Парсинг JSON ответа
         import re
@@ -1610,16 +1668,17 @@ async def chat_qwen_create(request: Request) -> dict[str, str]:
     from .db import init_db
 
     try:
-        body = await request.json()
+        raw = await request.json()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+    try:
+        payload = ChatCreateRequest.model_validate(raw)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors()) from e
 
-    prompt = body.get("prompt", "")
-    context = body.get("context", {})
-    work_item_id = body.get("work_item_id")
-
-    if not prompt:
-        raise HTTPException(status_code=400, detail="prompt is required")
+    prompt = payload.prompt
+    context = payload.context
+    work_item_id = payload.work_item_id
 
     try:
         tmp = init_db(_db_path())
@@ -1656,7 +1715,7 @@ async def chat_qwen_create(request: Request) -> dict[str, str]:
 
 
 @app.get("/api/chat/qwen/{chat_id}/stream")
-async def chat_qwen_stream(chat_id: str):
+async def chat_qwen_stream(chat_id: str = FastPath(..., min_length=1, max_length=128)):
     """SSE поток для чата с Qwen."""
     from starlette.responses import StreamingResponse
     from .db import init_db
@@ -1693,19 +1752,16 @@ async def chat_qwen_stream(chat_id: str):
 
 @app.post("/api/qwen/fix")
 def qwen_fix_endpoint(
-    body: dict[str, Any] = Body(...),
+    body: QwenFixRequest = Body(...),
     _: None = Depends(require_api_key),
 ) -> dict[str, Any]:
     """
     Запрос исправления ошибки у Qwen.
     Используется для авто-исправления Forge ошибок.
     """
-    error_type = str(body.get("type") or "unknown").strip()
-    message = str(body.get("message") or "").strip()
-    context = body.get("context", {})
-    
-    if not message:
-        raise HTTPException(status_code=400, detail={"error": "message is required"})
+    error_type = str(body.type or "unknown").strip()
+    message = body.message.strip()
+    context = body.context
     
     # Промпт для Qwen
     prompt = f"""
@@ -1733,7 +1789,7 @@ def qwen_fix_endpoint(
     
     try:
         # Вызов Qwen CLI
-        result = run_qwen_cli(prompt=prompt, timeout=120)
+        result = run_qwen_cli(prompt=prompt, timeout=QWEN_FIX_TIMEOUT_SECONDS)
         
         # Парсинг JSON ответа
         import re
@@ -1759,8 +1815,8 @@ def main(argv: list[str] | None = None) -> None:
     argv = argv if argv is not None else sys.argv[1:]
     p = argparse.ArgumentParser(description="Factory read-only HTTP API (SQLite)")
     p.add_argument("--db", help="Путь к SQLite (иначе FACTORY_DB / factory.db)")
-    p.add_argument("--host", default=os.environ.get("FACTORY_API_HOST", "127.0.0.1"))
-    p.add_argument("--port", type=int, default=int(os.environ.get("FACTORY_API_PORT", "8000")))
+    p.add_argument("--host", default=API_HOST)
+    p.add_argument("--port", type=int, default=API_PORT)
     args = p.parse_args(argv)
     if args.db:
         os.environ["FACTORY_DB"] = args.db
