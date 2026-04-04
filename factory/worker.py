@@ -116,7 +116,11 @@ def recover_stuck_running_work_items(
         """
     ).fetchall()
     for row in rows:
-        release_queue_lease(conn, row["id"])
+        conn.execute(
+            "DELETE FROM work_item_queue WHERE work_item_id = ?",
+            (row["id"],),
+        )
+    for row in rows:
         notify_stuck(
             work_item_id=row["id"],
             title=None,
@@ -164,6 +168,25 @@ def worker_iteration(factory: dict[str, Any], worker_id: str) -> bool:
             pass
         return False
     if not wi_id:
+        orphan = conn.execute(
+            """
+            SELECT r.work_item_id
+            FROM runs r
+            JOIN work_items wi ON wi.id = r.work_item_id
+            WHERE r.role = 'forge'
+              AND r.run_type = 'implement'
+              AND r.status = 'queued'
+              AND wi.status = 'in_progress'
+            ORDER BY r.started_at ASC
+            LIMIT 1
+            """
+        ).fetchone()
+        if orphan:
+            forge.run_forge_queued_runs(orch)
+            conn.commit()
+            drain_atom_downstream(orch, orphan["work_item_id"])
+            conn.commit()
+            return True
         return False
 
     try:

@@ -24,7 +24,7 @@ from .schema_ddl import DDL, V_API_USAGE_TODAY_RECREATE
 # Последняя миграция: 1=базовый DDL, 2=improvement_candidates, 3=file_changes.intent_override,
 # 4=fsm creator_cancelled/archive_sweep, 5=judge_rejected release locks, 6=cleanup stale locks,
 # 7=forensic_tracing_fields, 8=runs_retry_count, 9=runs_source_run_id_dry_run,
-# 10=work_items heartbeat, 11=sqlite_performance_indexes, 12=work_items_priority
+# 10=work_items heartbeat, 11=sqlite_performance_indexes, 12=work_items_priority, 13=dead_status
 _SCHEMA_VERSION = 13
 _SQLITE_TIMEOUT_SEC = SQLITE_TIMEOUT_SECONDS
 _SQLITE_BUSY_TIMEOUT_MS = SQLITE_BUSY_TIMEOUT_MS
@@ -305,6 +305,13 @@ def _migration_sqlite_performance_indexes(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_work_items_created_at ON work_items(created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_work_item_id ON runs(work_item_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(started_at)")
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_runs_active_per_work_item
+        ON runs(work_item_id)
+        WHERE status IN ('queued','running')
+        """
+    )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_entity_id ON event_log(entity_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_event_type ON event_log(event_type)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_created_at ON event_log(event_time)")
@@ -323,6 +330,20 @@ def _migration_work_items_priority(conn: sqlite3.Connection) -> None:
     if "priority" not in cols:
         conn.execute("ALTER TABLE work_items ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
     conn.execute("UPDATE work_items SET priority = COALESCE(priority, 0)")
+
+
+def _migration_work_items_dead_status(conn: sqlite3.Connection) -> None:
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(work_items)").fetchall()}
+    if "dead_at" not in cols:
+        conn.execute("ALTER TABLE work_items ADD COLUMN dead_at TEXT")
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO state_transitions VALUES
+            ('st_13','work_item','in_progress','forge_failed','dead',
+             'guard_over_retry_limit','action_mark_dead',NULL,
+             'Кузница упала окончательно — терминальный dead')
+        """
+    )
 
 
 @contextmanager
@@ -508,9 +529,9 @@ def ensure_schema(db_path: Path = DB_PATH) -> None:
                 mv = _max_migration_version(conn)
 
             if mv < 13:
-                _migration_work_items_dead_at(conn)
+                _migration_work_items_dead_status(conn)
                 conn.execute(
-                    "INSERT OR IGNORE INTO migrations(version, name) VALUES (13, 'work_items_dead_at')"
+                    "INSERT OR IGNORE INTO migrations(version, name) VALUES (13, 'work_items_dead_status')"
                 )
 
             conn.commit()

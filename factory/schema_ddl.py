@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS work_items (
     tags                  TEXT,          -- JSON-массив тегов
     metadata              TEXT,          -- JSON произвольный
     last_heartbeat_at     TIMESTAMP,
-    dead_at               TIMESTAMP,
+    dead_at               TEXT,
     created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now')),
     updated_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now'))
 );
@@ -285,6 +285,9 @@ CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 CREATE INDEX IF NOT EXISTS idx_runs_agent  ON runs(agent_id);
 CREATE INDEX IF NOT EXISTS idx_runs_corr   ON runs(correlation_id);
 CREATE INDEX IF NOT EXISTS idx_runs_input_hash ON runs(input_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_runs_active_per_work_item
+    ON runs(work_item_id)
+    WHERE status IN ('queued','running');
 
 
 -- ───────────────────────────────────────────────────
@@ -568,9 +571,9 @@ INSERT OR IGNORE INTO state_transitions VALUES
      'guard_can_retry','action_increment_retry',NULL,
      'Кузница упала — повтор если есть попытки'),
 
-    ('st_13','work_item','in_progress','forge_failed','ready_for_judge',
-     'guard_over_retry_limit','action_escalate_to_judge',NULL,
-     'Кузница упала окончательно — эскалация к судье'),
+    ('st_13','work_item','in_progress','forge_failed','dead',
+     'guard_over_retry_limit','action_mark_dead',NULL,
+     'Кузница упала окончательно — терминальный dead'),
 
     ('st_14','work_item','in_review','review_passed','ready_for_judge',
      'guard_all_checks_passed','action_notify_judge','["atom","atm_change"]',

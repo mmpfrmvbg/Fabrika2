@@ -17,6 +17,7 @@ def test_ensure_schema_creates_expected_indexes(tmp_path: Path) -> None:
             "idx_work_items_created_at",
             "idx_runs_work_item_id",
             "idx_runs_created_at",
+            "ux_runs_active_per_work_item",
             "idx_event_log_entity_id",
             "idx_event_log_event_type",
             "idx_event_log_created_at",
