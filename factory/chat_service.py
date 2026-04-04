@@ -83,7 +83,7 @@ class ChatService:
                     if task.done():
                         break
                     # Keepalive для поддержания соединения
-                    yield f": keepalive\n\n"
+                    yield ": keepalive\n\n"
             
             # Финальный ответ
             yield f"data: {json.dumps({'type': 'done', 'full_response': session['response']})}\n\n"
@@ -170,7 +170,7 @@ class ChatService:
         
         # Контекст задачи
         if context.get('work_item_id'):
-            parts.append(f"\n\n## Контекст задачи:")
+            parts.append("\n\n## Контекст задачи:")
             parts.append(f"- ID: {context['work_item_id']}")
             parts.append(f"- Тип: {context.get('kind', 'unknown')}")
             parts.append(f"- Заголовок: {context.get('title', 'N/A')}")
@@ -180,7 +180,7 @@ class ChatService:
         
         # Файлы (если есть)
         if context.get('files'):
-            parts.append(f"\n\n## Файлы задачи:")
+            parts.append("\n\n## Файлы задачи:")
             for f in context['files']:
                 parts.append(f"- {f['path']} ({f.get('intent', 'modify')})")
         

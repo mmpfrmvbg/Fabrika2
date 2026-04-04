@@ -47,7 +47,6 @@ def accept_dashboard_task_run(wi_id: str) -> tuple[bool, dict, int]:
     db_path = resolve_db_path()
     factory = wire(db_path)
     conn = factory["conn"]
-    sm = factory["sm"]
     logger = factory["logger"]
     deny: tuple[bool, dict, int] | None = None
     try:
