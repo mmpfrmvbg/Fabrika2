@@ -50,7 +50,17 @@ def worker_iteration(factory: dict[str, Any], worker_id: str) -> bool:
     conn = factory["conn"]
     logger: FactoryLogger = factory["logger"]
 
-    wi_id = claim_forge_inbox_atom(conn, worker_id)
+    _apply_worker_sqlite_pragmas(conn)
+    try:
+        wi_id = claim_forge_inbox_atom(conn, worker_id)
+    except sqlite3.OperationalError as e:
+        if "locked" not in str(e).lower():
+            raise
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
     if not wi_id:
         return False
 
@@ -98,7 +108,8 @@ def worker_iteration(factory: dict[str, Any], worker_id: str) -> bool:
         return True
 
 
-def _apply_busy_timeout(conn: sqlite3.Connection) -> None:
+def _apply_worker_sqlite_pragmas(conn: sqlite3.Connection) -> None:
+    conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 30000")
 
 
@@ -119,7 +130,7 @@ def run_worker_loop(*, worker_id: str, poll_sec: float) -> None:
     db_path = resolve_db_path()
     factory = wire(db_path)
     conn = factory["conn"]
-    _apply_busy_timeout(conn)
+    _apply_worker_sqlite_pragmas(conn)
     logger = factory["logger"]
     logger.log(
         EventType.TASK_STATUS_CHANGED,

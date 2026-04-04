@@ -17,6 +17,8 @@ from .schema_ddl import DDL, V_API_USAGE_TODAY_RECREATE
 
 # Последняя миграция: 1=базовый DDL, 2=improvement_candidates, 3=file_changes.intent_override, 4=fsm creator_cancelled/archive_sweep, 5=judge_rejected release locks, 6=cleanup stale locks
 _SCHEMA_VERSION = 9
+_SQLITE_TIMEOUT_SEC = 30.0
+_SQLITE_BUSY_TIMEOUT_MS = 30000
 
 # Migration v2: self-improvement candidates (idempotent CREATE TABLE IF NOT EXISTS)
 IMPROVEMENT_CANDIDATES_DDL = """
@@ -67,6 +69,40 @@ def _db_path_from_conn(conn: sqlite3.Connection) -> Path | None:
         if name == "main" and path:
             return Path(path)
     return None
+
+
+def _connect_sqlite(
+    db_path: Path | str,
+    *,
+    read_only: bool = False,
+) -> sqlite3.Connection:
+    """Единая точка открытия SQLite-соединений с согласованными PRAGMA."""
+    p = Path(db_path).resolve()
+    if read_only:
+        if not p.exists():
+            raise FileNotFoundError(str(p))
+        uri = p.as_uri() + "?mode=ro"
+        conn = sqlite3.connect(
+            uri,
+            uri=True,
+            timeout=_SQLITE_TIMEOUT_SEC,
+            check_same_thread=False,
+        )
+        conn.row_factory = sqlite3.Row
+        conn.execute(f"PRAGMA busy_timeout = {_SQLITE_BUSY_TIMEOUT_MS}")
+        conn.execute("PRAGMA query_only = ON")
+        return conn
+
+    conn = sqlite3.connect(
+        str(p),
+        timeout=_SQLITE_TIMEOUT_SEC,
+        check_same_thread=False,
+    )
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
+    conn.execute("PRAGMA wal_autocheckpoint = 100")
+    return conn
 
 
 def ensure_improvement_candidates_schema(conn: sqlite3.Connection) -> None:
@@ -316,10 +352,8 @@ def ensure_schema(db_path: Path = DB_PATH) -> None:
 
     # Быстрый чек без lock: если все миграции применены — выходим (без DDL).
     try:
-        conn0 = sqlite3.connect(str(db_path), timeout=30.0)
+        conn0 = _connect_sqlite(db_path)
         try:
-            conn0.execute("PRAGMA journal_mode = WAL")
-            conn0.execute("PRAGMA busy_timeout = 15000")
             if _max_migration_version(conn0) >= _SCHEMA_VERSION:
                 return
         finally:
@@ -329,11 +363,9 @@ def ensure_schema(db_path: Path = DB_PATH) -> None:
 
     lock_path = Path(str(db_path) + ".migrate.lock")
     with _advisory_file_lock(lock_path):
-        conn = sqlite3.connect(str(db_path), timeout=30.0)
+        conn = _connect_sqlite(db_path)
         try:
-            conn.execute("PRAGMA journal_mode = WAL")
             conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute("PRAGMA busy_timeout = 15000")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS migrations (
@@ -546,24 +578,8 @@ def get_connection(db_path: Path | str = DB_PATH, *, read_only: bool = False) ->
 
     ``read_only=True`` — URI ``?mode=ro`` (для API read-path); ``foreign_keys`` включены для единообразия.
     """
-    p = Path(db_path).resolve()
-    if read_only:
-        if not p.exists():
-            raise FileNotFoundError(str(p))
-        uri = p.as_uri() + "?mode=ro"
-        conn = sqlite3.connect(uri, uri=True, timeout=30.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA busy_timeout = 15000")
-        conn.execute("PRAGMA query_only = ON")
-        return conn
-
-    conn = sqlite3.connect(str(p), timeout=30.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode = WAL")
+    conn = _connect_sqlite(db_path, read_only=read_only)
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 30000")
-    conn.execute("PRAGMA wal_autocheckpoint = 100")
     # Явный checkpoint при подключении для разблокировки после сбоев
     try:
         conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
