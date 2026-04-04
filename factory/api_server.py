@@ -12,6 +12,7 @@ Read-only HTTP API для дашборда (SQLite WAL, mode=ro).
 from __future__ import annotations
 
 import argparse
+from contextlib import asynccontextmanager
 import json
 import os
 import sqlite3
@@ -50,8 +51,6 @@ from .qwen_cli_runner import run_qwen_cli
 from .chat_service import ChatService
 
 load_dotenv()
-
-app = FastAPI(title="Factory read-only API", version="1.0")
 
 # Глобальный logger для endpoint (создаётся при первом использовании)
 _logger: FactoryLogger | None = None
@@ -256,14 +255,16 @@ class _OrchestratorThread:
 _orch_thread = _OrchestratorThread()
 
 
-@app.on_event("startup")
-def _startup_orchestrator() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     _orch_thread.start()
+    try:
+        yield
+    finally:
+        _orch_thread.stop()
 
 
-@app.on_event("shutdown")
-def _shutdown_orchestrator() -> None:
-    _orch_thread.stop()
+app = FastAPI(title="Factory read-only API", version="1.0", lifespan=lifespan)
 
 
 @app.get("/health")
