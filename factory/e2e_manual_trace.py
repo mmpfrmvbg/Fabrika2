@@ -38,7 +38,6 @@ from .config import resolve_db_path
 from .composition import wire
 from .forge_next_atom import execute_run_next_atom, mark_atom_ready_for_forge
 from .e2e_qwen_wet_shared import (
-    WET_EDIT_ATOM_DESCRIPTION,
     WET_EDIT_HELLO_PATH,
     drive_wet_hello_atom_to_ready_for_work,
 )

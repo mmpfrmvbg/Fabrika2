@@ -82,4 +82,3 @@ def test_create_vision_then_5_ticks_atoms_done(monkeypatch) -> None:
             path.unlink(missing_ok=True)
         except OSError:
             pass
-

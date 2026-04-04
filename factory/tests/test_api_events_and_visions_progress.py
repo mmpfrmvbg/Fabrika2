@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sqlite3
 
 from factory.api_server import list_events, visions
@@ -64,4 +63,3 @@ def test_api_visions_includes_progress(monkeypatch, tmp_path) -> None:
     assert pr.get("total_descendants") == 3
     assert pr.get("done_descendants") == 2  # done + cancelled
     assert pr.get("pct") == 67
-

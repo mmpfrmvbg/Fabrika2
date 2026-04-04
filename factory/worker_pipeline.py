@@ -8,7 +8,7 @@ from .agents import forge
 from .models import QueueName, WorkItemStatus
 
 if TYPE_CHECKING:
-    from .orchestrator_core import Orchestrator
+    pass
 
 
 def drain_atom_downstream(orch: Any, wi_id: str, *, max_rounds: int = 60) -> None:

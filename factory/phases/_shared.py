@@ -6,7 +6,7 @@ import sqlite3
 from typing import Any
 
 from ..db import transaction
-from ..models import EventType, Severity
+from ..models import EventType
 
 
 def apply_rule(

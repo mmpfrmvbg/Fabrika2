@@ -214,7 +214,7 @@ ORCHESTRATOR_TICK_INTERVAL_SECONDS = env_float("FACTORY_TICK_INTERVAL", 3.0, min
 from .models import EventType, Severity
 
 if TYPE_CHECKING:  # pragma: no cover
-    from .logging import FactoryLogger
+    pass
 
 
 class AccountExhaustedError(Exception):

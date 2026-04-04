@@ -402,4 +402,3 @@ def api_tree_nested(conn: sqlite3.Connection) -> dict[str, Any]:
         sort_children(r0)
 
     return {"roots": roots}
-

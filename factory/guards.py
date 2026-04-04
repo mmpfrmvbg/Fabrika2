@@ -251,4 +251,3 @@ class Guards:
         if fn is None:
             raise ValueError(f"Неизвестный guard: {guard_name}")
         return fn
-
