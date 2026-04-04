@@ -192,15 +192,16 @@ function updateNavBadges() {
   
   // Failures: количество кластеров
   const badgeFail = document.getElementById('badge-fail');
-  if (badgeFail && failures?.clusters?.length) {
-    badgeFail.textContent = Math.min(failures.clusters.length, 99);
+  if (badgeFail) {
+    const failureClustersCount = failures?.clusters?.length || 0;
+    badgeFail.textContent = Math.min(failureClustersCount, 99);
   }
   
-  // Improvements: количество proposed
+  // Improvements: количество кандидатов из API
   const badgeImprovements = document.getElementById('badge-improvements');
-  if (badgeImprovements && improvements?.candidates) {
-    const proposed = improvements.candidates.filter(i => i.status === 'proposed').length;
-    badgeImprovements.textContent = Math.min(proposed, 99);
+  if (badgeImprovements) {
+    const improvementsCount = improvements?.candidates?.length || 0;
+    badgeImprovements.textContent = Math.min(improvementsCount, 99);
   }
   
   // HR: количество proposals
