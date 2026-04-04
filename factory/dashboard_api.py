@@ -258,7 +258,13 @@ def _dashboard_public_origin(handler: BaseHTTPRequestHandler) -> str:
             h = h.split("@")[-1]
         return f"http://{h}".rstrip("/")
 
-    bind_host, port = handler.server.server_address
+    server_address = handler.server.server_address
+    if isinstance(server_address, tuple) and len(server_address) >= 2:
+        bind_host = server_address[0]
+        port = server_address[1]
+    else:
+        bind_host = str(server_address)
+        port = 80
     if isinstance(bind_host, bytes):
         bind_host = bind_host.decode("utf-8", "replace")
     bind_s = str(bind_host)
@@ -753,10 +759,12 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             wi_id = unquote(m_com.group(1))
             try:
                 data = _read_post_json(self)
+                body = data.get("body")
+                body_text = body if isinstance(body, str) else ""
                 _ok, payload, code = post_task_comment(
                     wi_id,
                     data.get("author"),
-                    data.get("body") if isinstance(data.get("body"), str) else "",
+                    body_text,
                 )
             except (OSError, sqlite3.OperationalError) as e:
                 _json_response(

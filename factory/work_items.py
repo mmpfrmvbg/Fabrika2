@@ -1,6 +1,7 @@
 """Создание и обновление work_items, комментариев, решений."""
 import json
 import sqlite3
+from typing import Any
 
 from .models import CommentType, EventType, Role
 from .db import gen_id
@@ -15,7 +16,7 @@ class WorkItemOps:
         self.logger = logger
 
     def create_vision(
-        self, title: str, description: str = None, *, auto_commit: bool = True
+        self, title: str, description: str | None = None, *, auto_commit: bool = True
     ) -> str:
         wi_id = gen_id("vis")
         self.conn.execute(
@@ -44,9 +45,9 @@ class WorkItemOps:
         parent_id: str,
         kind: str,
         title: str,
-        description: str = None,
+        description: str | None = None,
         creator_role: str = Role.PLANNER.value,
-        files: list[dict] = None,
+        files: list[dict[str, Any]] | None = None,
         *,
         auto_commit: bool = True,
     ) -> str:
@@ -112,7 +113,7 @@ class WorkItemOps:
         author_role: str,
         body: str,
         comment_type: str = CommentType.NOTE.value,
-        structured_payload: dict = None,
+        structured_payload: dict[str, Any] | None = None,
         *,
         auto_commit: bool = True,
     ) -> str:
@@ -142,10 +143,10 @@ class WorkItemOps:
         wi_id: str,
         decision_role: str,
         verdict: str,
-        explanation: str = None,
-        reason_code: str = None,
-        suggested_fix: str = None,
-        run_id: str = None,
+        explanation: str | None = None,
+        reason_code: str | None = None,
+        suggested_fix: str | None = None,
+        run_id: str | None = None,
         *,
         auto_commit: bool = True,
     ) -> str:

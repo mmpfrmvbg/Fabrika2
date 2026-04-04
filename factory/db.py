@@ -366,7 +366,7 @@ def _advisory_file_lock(
                     fh.seek(0)
                     fh.write(b"\0")
                     fh.flush()
-                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
                     break
                 except OSError:
                     if time.time() - start >= timeout_sec:
@@ -393,7 +393,7 @@ def _advisory_file_lock(
 
                 fh.seek(0)
                 try:
-                    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
                 except PermissionError as e:
                     # On some Windows setups, unlocking may raise if the region is already unlocked.
                     _LOG.debug("Ignoring Windows file unlock permission error: %s", e)

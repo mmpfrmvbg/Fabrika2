@@ -62,7 +62,7 @@ class ChatService:
 
         try:
             session['status'] = 'running'
-            queue = asyncio.Queue()
+            queue: asyncio.Queue[str] = asyncio.Queue()
 
             def on_chunk(chunk: str):
                 queue.put_nowait(chunk)

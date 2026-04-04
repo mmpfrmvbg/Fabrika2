@@ -486,6 +486,7 @@ async def rate_limit_middleware(
 ) -> Response:
     ip = _client_ip(request)
     meta = _rate_limit_meta(request.method, ip)
+    response: Response
     if meta["is_limited"]:
         response = JSONResponse(
             status_code=429,
@@ -2077,23 +2078,35 @@ Vision: {title}
     
     try:
         # Вызов Qwen CLI
-        result = run_qwen_cli(prompt=prompt, timeout=QWEN_DECOMPOSE_TIMEOUT_SECONDS)
+        with _open_rw() as conn:
+            logger = FactoryLogger(conn)
+            am = AccountManager(conn, logger)
+            result = run_qwen_cli(
+                conn=conn,
+                account_manager=am,
+                logger=logger,
+                work_item_id="api_decompose_preview",
+                title=title,
+                description=description,
+                full_prompt=prompt,
+            )
+        result_text = result.stdout or result.stderr or ""
         
         # Парсинг JSON ответа
         import re
-        json_match = re.search(r'\{.*\}', result, re.DOTALL)
+        json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
         if json_match:
             hierarchy = json.loads(json_match.group())
         else:
-            hierarchy = json.loads(result)
+            hierarchy = json.loads(result_text)
         
         return {"hierarchy": hierarchy, "ok": True}
         
     except json.JSONDecodeError as e:
-        _get_logger().error(f'Qwen decompose JSON error: {e}')
+        _LOG.error("Qwen decompose JSON error: %s", e)
         raise HTTPException(status_code=500, detail={"error": "Invalid JSON from Qwen", "message": str(e)})
     except Exception as e:
-        _get_logger().error(f'Qwen decompose error: {e}')
+        _LOG.error("Qwen decompose error: %s", e)
         raise HTTPException(status_code=500, detail={"error": "Decompose failed", "message": str(e)})
 
 
@@ -2233,23 +2246,35 @@ def qwen_fix_endpoint(
     
     try:
         # Вызов Qwen CLI
-        result = run_qwen_cli(prompt=prompt, timeout=QWEN_FIX_TIMEOUT_SECONDS)
+        with _open_rw() as conn:
+            logger = FactoryLogger(conn)
+            am = AccountManager(conn, logger)
+            result = run_qwen_cli(
+                conn=conn,
+                account_manager=am,
+                logger=logger,
+                work_item_id="api_fix_preview",
+                title=f"Fix: {error_type}",
+                description=message,
+                full_prompt=prompt,
+            )
+        result_text = result.stdout or result.stderr or ""
         
         # Парсинг JSON ответа
         import re
-        json_match = re.search(r'\{.*\}', result, re.DOTALL)
+        json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
         if json_match:
             fix = json.loads(json_match.group())
         else:
-            fix = json.loads(result)
+            fix = json.loads(result_text)
         
         return {"fix": fix, "ok": True}
         
     except json.JSONDecodeError as e:
-        _get_logger().error(f'Qwen fix JSON error: {e}')
+        _LOG.error("Qwen fix JSON error: %s", e)
         raise HTTPException(status_code=500, detail={"error": "Invalid JSON from Qwen", "message": str(e)})
     except Exception as e:
-        _get_logger().error(f'Qwen fix error: {e}')
+        _LOG.error("Qwen fix error: %s", e)
         raise HTTPException(status_code=500, detail={"error": "Fix failed", "message": str(e)})
 
 
