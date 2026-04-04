@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import tempfile
 import threading
 import time
@@ -110,20 +111,47 @@ class ConcurrentWorkersTests(unittest.TestCase):
 
             def run_w(wid: str) -> None:
                 try:
-                    f = wire(path)
-                    f["conn"].execute("PRAGMA busy_timeout = 30000")
+                    for _ in range(5):
+                        try:
+                            f = wire(path)
+                            break
+                        except sqlite3.OperationalError as e:
+                            if "locked" not in str(e).lower():
+                                raise
+                            time.sleep(0.1)
+                    else:
+                        raise AssertionError(f"failed to open worker connection for {wid}")
+
+                    bt = int(f["conn"].execute("PRAGMA busy_timeout").fetchone()[0])
+                    jm = str(f["conn"].execute("PRAGMA journal_mode").fetchone()[0]).lower()
+                    if bt < 30000:
+                        raise AssertionError(f"busy_timeout too low on {wid}: {bt}")
+                    if jm != "wal":
+                        raise AssertionError(f"journal_mode is not WAL on {wid}: {jm}")
                     deadline = time.monotonic() + 120.0
                     while time.monotonic() < deadline and not stop.is_set():
-                        if worker_iteration(f, wid):
+                        try:
+                            if worker_iteration(f, wid):
+                                continue
+                        except sqlite3.OperationalError as e:
+                            if "locked" not in str(e).lower():
+                                raise
+                            time.sleep(0.05)
                             continue
                         time.sleep(0.05)
-                        done_n = f["conn"].execute(
-                            """
-                            SELECT COUNT(*) AS c FROM work_items
-                            WHERE kind = 'atom' AND status = ?
-                            """,
-                            (WorkItemStatus.DONE.value,),
-                        ).fetchone()["c"]
+                        try:
+                            done_n = f["conn"].execute(
+                                """
+                                SELECT COUNT(*) AS c FROM work_items
+                                WHERE kind = 'atom' AND status = ?
+                                """,
+                                (WorkItemStatus.DONE.value,),
+                            ).fetchone()["c"]
+                        except sqlite3.OperationalError as e:
+                            if "locked" not in str(e).lower():
+                                raise
+                            time.sleep(0.05)
+                            continue
                         if int(done_n) >= len(atoms):
                             break
                     f["conn"].close()
