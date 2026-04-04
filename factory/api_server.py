@@ -968,6 +968,97 @@ def journal(
         conn.close()
 
 
+def _load_judgements_items(
+    conn: sqlite3.Connection, work_item_id: str | None, limit: int
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    qjv = """
+        SELECT id, work_item_id, verdict, payload_json, failed_guards_json,
+               rejection_reason_code, created_at, run_id
+        FROM judge_verdicts
+        WHERE 1=1
+    """
+    pjv: list[Any] = []
+    if work_item_id:
+        qjv += " AND work_item_id = ?"
+        pjv.append(work_item_id)
+    qjv += " ORDER BY created_at DESC LIMIT ?"
+    pjv.append(limit)
+    try:
+        jv = conn.execute(qjv, pjv).fetchall()
+    except sqlite3.OperationalError:
+        jv = []
+    for r in jv:
+        issues: Any = []
+        p: dict[str, Any] = {}
+        try:
+            p = json.loads(r["payload_json"] or "{}")
+            if isinstance(p, dict):
+                issues = p.get("failed_guards") or p.get("issues") or []
+            else:
+                issues = []
+        except json.JSONDecodeError:
+            issues = []
+        try:
+            if r["failed_guards_json"]:
+                issues = json.loads(r["failed_guards_json"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+        used_el = None
+        if isinstance(p, dict):
+            used_el = p.get("used_event_log")
+        items.append(
+            {
+                "id": r["id"],
+                "work_item_id": r["work_item_id"],
+                "role": "judge",
+                "verdict": r["verdict"],
+                "reason_code": r["rejection_reason_code"] or "",
+                "issues": issues if isinstance(issues, list) else [],
+                "created_at": r["created_at"],
+                "run_id": r["run_id"],
+                "summary": (r["verdict"] or "")[:200],
+                "used_event_log": used_el if isinstance(used_el, bool) else False,
+            }
+        )
+    qrr = """
+        SELECT id, work_item_id, verdict, issues_json, payload_json, created_at, reviewer_run_id
+        FROM review_results
+        WHERE 1=1
+    """
+    prr: list[Any] = []
+    if work_item_id:
+        qrr += " AND work_item_id = ?"
+        prr.append(work_item_id)
+    qrr += " ORDER BY created_at DESC LIMIT ?"
+    prr.append(limit)
+    try:
+        rr = conn.execute(qrr, prr).fetchall()
+    except sqlite3.OperationalError:
+        rr = []
+    for r in rr:
+        issues = []
+        try:
+            issues = json.loads(r["issues_json"] or "[]")
+        except json.JSONDecodeError:
+            issues = []
+        items.append(
+            {
+                "id": r["id"],
+                "work_item_id": r["work_item_id"],
+                "role": "reviewer",
+                "verdict": r["verdict"],
+                "reason_code": "",
+                "issues": issues,
+                "created_at": r["created_at"],
+                "run_id": r["reviewer_run_id"],
+                "summary": (r["verdict"] or "")[:200],
+            }
+        )
+    items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    return items[:limit]
+
+
 @app.get("/api/judgements")
 def judgements(
     work_item_id: str | None = None,
@@ -975,86 +1066,21 @@ def judgements(
 ) -> dict[str, Any]:
     conn = _open_ro()
     try:
-        items: list[dict[str, Any]] = []
-        qjv = """
-            SELECT id, work_item_id, verdict, payload_json, failed_guards_json,
-                   rejection_reason_code, created_at, run_id
-            FROM judge_verdicts
-            WHERE 1=1
-        """
-        pjv: list[Any] = []
-        if work_item_id:
-            qjv += " AND work_item_id = ?"
-            pjv.append(work_item_id)
-        qjv += " ORDER BY created_at DESC LIMIT ?"
-        pjv.append(limit)
-        jv = conn.execute(qjv, pjv).fetchall()
-        for r in jv:
-            issues: Any = []
-            p: dict[str, Any] = {}
-            try:
-                p = json.loads(r["payload_json"] or "{}")
-                if isinstance(p, dict):
-                    issues = p.get("failed_guards") or p.get("issues") or []
-                else:
-                    issues = []
-            except json.JSONDecodeError:
-                issues = []
-            try:
-                if r["failed_guards_json"]:
-                    issues = json.loads(r["failed_guards_json"])
-            except (json.JSONDecodeError, TypeError):
-                pass
-            used_el = None
-            if isinstance(p, dict):
-                used_el = p.get("used_event_log")
-            items.append(
-                {
-                    "id": r["id"],
-                    "work_item_id": r["work_item_id"],
-                    "role": "judge",
-                    "verdict": r["verdict"],
-                    "reason_code": r["rejection_reason_code"] or "",
-                    "issues": issues if isinstance(issues, list) else [],
-                    "created_at": r["created_at"],
-                    "run_id": r["run_id"],
-                    "summary": (r["verdict"] or "")[:200],
-                    "used_event_log": used_el if isinstance(used_el, bool) else False,
-                }
-            )
-        qrr = """
-            SELECT id, work_item_id, verdict, issues_json, payload_json, created_at, reviewer_run_id
-            FROM review_results
-            WHERE 1=1
-        """
-        prr: list[Any] = []
-        if work_item_id:
-            qrr += " AND work_item_id = ?"
-            prr.append(work_item_id)
-        qrr += " ORDER BY created_at DESC LIMIT ?"
-        prr.append(limit)
-        rr = conn.execute(qrr, prr).fetchall()
-        for r in rr:
-            issues: Any = []
-            try:
-                issues = json.loads(r["issues_json"] or "[]")
-            except json.JSONDecodeError:
-                issues = []
-            items.append(
-                {
-                    "id": r["id"],
-                    "work_item_id": r["work_item_id"],
-                    "role": "reviewer",
-                    "verdict": r["verdict"],
-                    "reason_code": "",
-                    "issues": issues,
-                    "created_at": r["created_at"],
-                    "run_id": r["reviewer_run_id"],
-                    "summary": (r["verdict"] or "")[:200],
-                }
-            )
-        items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
-        return {"items": items[:limit]}
+        return {"items": _load_judgements_items(conn, work_item_id, limit)}
+    finally:
+        conn.close()
+
+
+@app.get("/api/verdicts")
+@app.get("/api/judge_verdicts")
+def judge_verdicts(
+    work_item_id: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+) -> list[dict[str, Any]]:
+    """Compatibility endpoint: always returns a JSON list for dashboard verdict pages."""
+    conn = _open_ro()
+    try:
+        return _load_judgements_items(conn, work_item_id, limit)
     finally:
         conn.close()
 
