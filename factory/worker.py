@@ -221,6 +221,7 @@ def run_worker_loop(*, worker_id: str, poll_sec: float) -> None:
     os.environ.setdefault("FACTORY_ORCHESTRATOR_ASYNC", "0")
 
     stop = False
+    shutting_down_logged = False
 
     def _handle_sig(_sig, _frame) -> None:
         nonlocal stop
@@ -263,7 +264,7 @@ def run_worker_loop(*, worker_id: str, poll_sec: float) -> None:
     conn.commit()
 
     try:
-        while not stop:
+        while True:
             worked = False
             for attempt in range(3):
                 try:
@@ -284,7 +285,21 @@ def run_worker_loop(*, worker_id: str, poll_sec: float) -> None:
                     )
                     conn.rollback()
                     break
-            if not worked and not stop:
+            if stop and worked and not shutting_down_logged:
+                logger.log(
+                    EventType.TASK_STATUS_CHANGED,
+                    "system",
+                    "worker",
+                    "Worker shutting down gracefully, finishing current item...",
+                    actor_role=Role.ORCHESTRATOR.value,
+                    payload={"sub": "worker_shutdown_graceful", "worker_id": worker_id},
+                    tags=["worker", "lifecycle"],
+                )
+                conn.commit()
+                shutting_down_logged = True
+            if stop and not worked:
+                break
+            if not worked:
                 time.sleep(poll_sec)
     finally:
         try:
@@ -292,9 +307,9 @@ def run_worker_loop(*, worker_id: str, poll_sec: float) -> None:
                 EventType.TASK_STATUS_CHANGED,
                 "system",
                 "worker",
-                f"Worker stopping id={worker_id}",
+                "Worker stopped cleanly",
                 actor_role=Role.ORCHESTRATOR.value,
-                payload={"sub": "worker_stopped", "worker_id": worker_id},
+                payload={"sub": "worker_stopped_cleanly", "worker_id": worker_id},
                 tags=["worker", "lifecycle"],
             )
             conn.commit()
