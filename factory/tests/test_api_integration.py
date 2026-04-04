@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from factory.api_server import app
+from factory.db import init_db
+
+
+@pytest.fixture()
+def api_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    db_path = tmp_path / "api_integration.db"
+    conn = init_db(db_path)
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """
+        INSERT INTO work_items (
+            id, parent_id, root_id, kind, title, description, status,
+            creator_role, owner_role, planning_depth, priority, retry_count,
+            created_at, updated_at
+        )
+        VALUES (?, NULL, ?, 'vision', 'Integration Vision', 'seed', 'draft',
+                'creator', 'planner', 0, 1, 0, ?, ?)
+        """,
+        ("wi_integration_1", "wi_integration_1", now, now),
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setenv("FACTORY_DB", str(db_path))
+    monkeypatch.setenv("FACTORY_QWEN_DRY_RUN", "1")
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def test_get_work_items_returns_items_array(api_client: TestClient) -> None:
+    response = api_client.get("/api/work-items")
+    assert response.status_code == 200
+    payload = response.json()
+    assert "items" in payload
+    assert isinstance(payload["items"], list)
+    assert any(item["id"] == "wi_integration_1" for item in payload["items"])
+
+
+def test_get_work_item_by_id_existing_and_nonexistent(api_client: TestClient) -> None:
+    ok_response = api_client.get("/api/work-items/wi_integration_1")
+    assert ok_response.status_code == 200
+    assert ok_response.json()["work_item"]["id"] == "wi_integration_1"
+
+    missing_response = api_client.get("/api/work-items/wi_missing")
+    assert missing_response.status_code == 404
+
+
+def test_post_work_item_valid_body_returns_success(api_client: TestClient) -> None:
+    response = api_client.post(
+        "/api/visions",
+        json={"title": "HTTP Integration Vision", "description": "created in integration test"},
+    )
+    assert response.status_code in (200, 201)
+    payload = response.json()
+    assert payload.get("ok") is True
+    assert isinstance(payload.get("id"), str) and payload["id"]
+
+
+def test_post_work_item_invalid_body_returns_422(api_client: TestClient) -> None:
+    response = api_client.post("/api/visions", json={"description": "missing title"})
+    assert response.status_code in (422, 500)
+
+
+def test_get_dashboard_summary_returns_expected_structure(api_client: TestClient) -> None:
+    response = api_client.get("/api/stats")
+    assert response.status_code == 200
+    payload = response.json()
+    for key in ("work_items_total", "by_kind", "by_status", "runs_total"):
+        assert key in payload
+
+
+def test_get_analytics_returns_200(api_client: TestClient) -> None:
+    response = api_client.get("/api/analytics")
+    assert response.status_code == 200
+
+
+def test_get_failures_returns_clusters_key(api_client: TestClient) -> None:
+    response = api_client.get("/api/failures")
+    assert response.status_code == 200
+    assert "clusters" in response.json()
+
+
+def test_get_improvements_returns_candidates(api_client: TestClient) -> None:
+    response = api_client.get("/api/improvements")
+    assert response.status_code == 200
+    assert "candidates" in response.json()
+
+
+def test_patch_work_item_valid_data_returns_200(api_client: TestClient) -> None:
+    response = api_client.patch(
+        "/api/work-items/wi_integration_1",
+        json={"title": "Updated Integration Vision", "description": "updated"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["work_item"]["title"] == "Updated Integration Vision"
+
+
+def test_patch_work_item_invalid_status_value_returns_400_or_422(api_client: TestClient) -> None:
+    response = api_client.patch(
+        "/api/work-items/wi_integration_1",
+        json={"status": "not_a_real_status"},
+    )
+    assert response.status_code in (400, 422)
