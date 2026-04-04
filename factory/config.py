@@ -203,6 +203,9 @@ ORCHESTRATOR_ARCHITECT_SCAN_TICKS = int(
 )
 API_HOST = os.environ.get("FACTORY_API_HOST", "127.0.0.1")
 API_PORT = env_int("FACTORY_API_PORT", 8000, minimum=1)
+def get_factory_api_key() -> str | None:
+    """Optional API key for protecting API routes."""
+    return (os.environ.get("FACTORY_API_KEY") or "").strip() or None
 WORKER_POLL_SECONDS = env_float("FACTORY_WORKER_POLL", 5.0, minimum=0.5)
 WORKER_STUCK_TIMEOUT_SECONDS = env_float("FACTORY_WORKER_TIMEOUT", 300.0, minimum=60.0)
 SQLITE_TIMEOUT_SECONDS = env_float("FACTORY_SQLITE_TIMEOUT_SECONDS", 30.0, minimum=1.0)

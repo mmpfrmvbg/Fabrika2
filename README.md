@@ -34,7 +34,7 @@ All production-sensitive defaults are centralized in `factory/config.py` with en
 - `FACTORY_SQLITE_BUSY_TIMEOUT_MS` — SQLite busy timeout pragma.
 - `FACTORY_QWEN_DECOMPOSE_TIMEOUT` — timeout for `/api/visions/{id}/decompose` calls.
 - `FACTORY_QWEN_FIX_TIMEOUT` — timeout for `/api/qwen/fix` calls.
-- `FACTORY_API_KEY` — if set, mutating endpoints require `X-API-Key` header.
+- `FACTORY_API_KEY` — optional shared secret for API auth. If set, **all `/api/*` endpoints** require `X-API-Key: <value>` and return `401 Unauthorized` when missing/invalid. If unset, API auth is disabled (backward compatible).
 
 ## Setup
 
@@ -49,7 +49,7 @@ pip install -r requirements.txt
 ```bash
 export FACTORY_DB_PATH=/absolute/path/to/factory.db
 export FACTORY_API_PORT=8000
-# Optional auth for mutating endpoints:
+# Optional auth for all /api endpoints:
 export FACTORY_API_KEY=change-me
 ```
 

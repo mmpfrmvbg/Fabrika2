@@ -40,6 +40,7 @@ from .config import (
     QWEN_FIX_TIMEOUT_SECONDS,
     AccountManager,
     load_dotenv,
+    get_factory_api_key,
     resolve_db_path,
 )
 from .composition import wire
@@ -126,13 +127,13 @@ def _get_logger(conn: sqlite3.Connection | None = None) -> FactoryLogger:
 
 
 async def require_api_key(request: Request) -> None:
-    """Если задан ``FACTORY_API_KEY``, мутирующие эндпоинты требуют заголовок ``X-API-Key``."""
-    expected = (os.environ.get("FACTORY_API_KEY") or "").strip()
+    """Если задан ``FACTORY_API_KEY``, endpoint требует заголовок ``X-API-Key``."""
+    expected = get_factory_api_key()
     if not expected:
         return
     got = (request.headers.get("X-API-Key") or "").strip()
     if got != expected:
-        raise HTTPException(status_code=403, detail="Invalid API key")
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -361,6 +362,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def api_key_auth_middleware(request: Request, call_next):
+    if request.url.path.startswith("/api") and request.method != "OPTIONS":
+        try:
+            await require_api_key(request)
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return await call_next(request)
 
 
 def _db_path() -> Path:
