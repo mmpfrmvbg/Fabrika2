@@ -371,6 +371,9 @@ def api_health() -> dict[str, Any]:
             conn.close()
     except HTTPException:
         db_connected = False
+    except (sqlite3.OperationalError, sqlite3.DatabaseError) as exc:
+        db_connected = False
+        raise HTTPException(status_code=503, detail=f"database unavailable: {exc}") from exc
     return {
         "status": "ok",
         "db_connected": db_connected,
@@ -1161,11 +1164,21 @@ def get_task_bundle(wi_id: str = FastPath(..., min_length=1, max_length=128)) ->
 
 
 @app.get("/api/work_items")
-def work_items_legacy(id: str | None = None) -> dict[str, Any]:
-    if not id or not id.strip():
-        raise HTTPException(status_code=400, detail="id required")
+def work_items_legacy(
+    id: str | None = None,
+    status: str | None = None,
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
     conn = _open_ro()
     try:
+        if not id or not id.strip():
+            return get_work_items_paginated(
+                conn,
+                limit=limit,
+                offset=offset,
+                filters={"status": status},
+            )
         wi = conn.execute("SELECT * FROM work_items WHERE id = ?", (id,)).fetchone()
         if not wi:
             raise HTTPException(status_code=404, detail="not found")

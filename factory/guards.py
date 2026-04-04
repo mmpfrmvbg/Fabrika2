@@ -74,6 +74,20 @@ class Guards:
         return True, "Все файлы свободны"
 
     def guard_can_retry(self, wi_id: str) -> tuple[bool, str]:
+        try:
+            queue_row = self.conn.execute(
+                "SELECT attempts, max_attempts FROM work_item_queue WHERE work_item_id = ?",
+                (wi_id,),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            queue_row = None
+        if queue_row is not None:
+            attempts = int(queue_row["attempts"] or 0)
+            max_attempts = int(queue_row["max_attempts"] or 0)
+            if attempts < max_attempts:
+                return True, f"Попытка {attempts+1}/{max_attempts}"
+            return False, f"Исчерпаны все {max_attempts} попыток"
+
         row = self.conn.execute(
             "SELECT retry_count, max_retries FROM work_items WHERE id = ?",
             (wi_id,),

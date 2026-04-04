@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
@@ -286,3 +287,21 @@ def test_post_work_items_accepts_priority_and_get_returns_it(api_client: TestCli
     get_response = api_client.get(f"/api/work_items?id={wi_id}")
     assert get_response.status_code == 200
     assert get_response.json()["work_item"]["priority"] == 9
+
+
+def test_legacy_work_items_list_supports_dead_status_filter(api_client: TestClient) -> None:
+    response = api_client.get("/api/work_items?status=dead")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"] == []
+
+
+def test_api_health_returns_503_on_sqlite_operational_error(
+    api_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _boom():
+        raise sqlite3.OperationalError("db unavailable")
+
+    monkeypatch.setattr(api_server, "_open_ro", _boom)
+    response = api_client.get("/api/health")
+    assert response.status_code == 503

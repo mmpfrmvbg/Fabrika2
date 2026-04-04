@@ -179,6 +179,27 @@ class Actions:
             "UPDATE work_items SET retry_count = retry_count + 1 WHERE id = ?",
             (wi_id,),
         )
+        self.conn.execute(
+            """
+            UPDATE work_item_queue
+            SET attempts = attempts + 1,
+                lease_owner = NULL,
+                lease_until = NULL
+            WHERE work_item_id = ?
+            """,
+            (wi_id,),
+        )
+        exhausted = self.conn.execute(
+            """
+            SELECT attempts, max_attempts
+            FROM work_item_queue
+            WHERE work_item_id = ?
+            """,
+            (wi_id,),
+        ).fetchone()
+        if exhausted and int(exhausted["attempts"] or 0) >= int(exhausted["max_attempts"] or 0):
+            self.action_mark_dead(wi_id, **ctx)
+            return
         self._enqueue(wi_id, QueueName.FORGE_INBOX)
 
     def action_escalate_to_judge(self, wi_id: str, **ctx: Any) -> None:
@@ -187,6 +208,23 @@ class Actions:
             (wi_id,),
         )
         self._enqueue(wi_id, QueueName.JUDGE_INBOX)
+
+    def action_mark_dead(self, wi_id: str, **ctx: Any) -> None:
+        self.conn.execute(
+            """
+            UPDATE work_items
+            SET status = 'dead',
+                previous_status = COALESCE(NULLIF(previous_status, ''), status),
+                dead_at = COALESCE(dead_at, strftime('%Y-%m-%dT%H:%M:%f','now')),
+                needs_human_review = 1
+            WHERE id = ?
+            """,
+            (wi_id,),
+        )
+        self.conn.execute(
+            "DELETE FROM work_item_queue WHERE work_item_id = ?",
+            (wi_id,),
+        )
 
     def action_commit_to_git(self, wi_id: str, **ctx: Any) -> None:
         self.action_release_file_locks(wi_id, **ctx)

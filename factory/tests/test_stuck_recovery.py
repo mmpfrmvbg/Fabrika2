@@ -6,6 +6,7 @@ from pathlib import Path
 
 from factory.db import init_db
 from factory.logging import FactoryLogger
+from factory.queue_ops import claim_forge_inbox_atom
 from factory.worker import recover_stuck_running_work_items
 
 
@@ -91,6 +92,50 @@ class StuckRecoveryTests(unittest.TestCase):
             "SELECT status FROM work_items WHERE id = 'wi_recent_running'"
         ).fetchone()
         self.assertEqual(row["status"], "running")
+
+    def test_recovery_releases_queue_lease_and_item_can_be_reclaimed(self) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO work_items (
+                id, parent_id, root_id, kind, title, description, status,
+                previous_status, creator_role, owner_role, planning_depth, priority
+            )
+            VALUES ('wi_crash', NULL, 'wi_crash', 'atom', 'Crash atom', '', 'running',
+                    'ready_for_work', 'planner', 'forge', 0, 100)
+            """
+        )
+        self.conn.execute(
+            """
+            INSERT INTO work_item_queue (
+                work_item_id, queue_name, lease_owner, lease_until, attempts, max_attempts
+            )
+            VALUES (
+                'wi_crash', 'forge_inbox', 'worker-1',
+                strftime('%Y-%m-%dT%H:%M:%f','now','+10 minutes'), 0, 3
+            )
+            """
+        )
+        self.conn.commit()
+
+        recovered = recover_stuck_running_work_items(
+            self.conn, self.logger, worker_id="worker-test"
+        )
+        self.conn.commit()
+        self.assertEqual(recovered, 1)
+
+        qrow = self.conn.execute(
+            "SELECT 1 FROM work_item_queue WHERE work_item_id = 'wi_crash'"
+        ).fetchone()
+        self.assertIsNone(qrow)
+
+        self.conn.execute(
+            """
+            INSERT INTO work_item_queue (work_item_id, queue_name, attempts, max_attempts)
+            VALUES ('wi_crash', 'forge_inbox', 0, 3)
+            """
+        )
+        claimed = claim_forge_inbox_atom(self.conn, "worker-recover")
+        self.assertEqual(claimed, "wi_crash")
 
 
 if __name__ == "__main__":
