@@ -67,6 +67,7 @@ load_dotenv()
 # Глобальный logger для endpoint (создаётся при первом использовании)
 _logger: FactoryLogger | None = None
 _LOG = logging.getLogger("factory.api_server")
+_API_STARTED_AT_MONOTONIC = time.monotonic()
 
 
 class WorkItemPatchRequest(BaseModel):
@@ -330,6 +331,26 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
+
+@app.get("/api/health")
+def api_health() -> dict[str, Any]:
+    uptime_seconds = max(0.0, time.monotonic() - _API_STARTED_AT_MONOTONIC)
+    db_connected = False
+    try:
+        conn = _open_ro()
+        try:
+            conn.execute("SELECT 1").fetchone()
+            db_connected = True
+        finally:
+            conn.close()
+    except HTTPException:
+        db_connected = False
+    return {
+        "status": "ok",
+        "db_connected": db_connected,
+        "uptime_seconds": uptime_seconds,
+    }
+
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
@@ -443,6 +464,77 @@ def _orchestrator_heartbeat_from_conn(conn: sqlite3.Connection) -> dict[str, Any
         "orchestrator_seconds_since_last_event": sec,
         "orchestrator_heartbeat_state": state,
     }
+
+
+@app.get("/api/metrics")
+def api_metrics() -> dict[str, Any]:
+    conn = _open_ro()
+    try:
+        work_items_total = int(conn.execute("SELECT COUNT(*) AS c FROM work_items").fetchone()["c"])
+        work_items_by_status = {
+            r["status"]: int(r["c"])
+            for r in conn.execute(
+                "SELECT status, COUNT(*) AS c FROM work_items GROUP BY status"
+            ).fetchall()
+        }
+        runs_total = int(conn.execute("SELECT COUNT(*) AS c FROM runs").fetchone()["c"])
+        runs_last_24h = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM runs
+                WHERE started_at IS NOT NULL
+                  AND julianday(started_at) >= julianday('now', '-1 day')
+                """
+            ).fetchone()["c"]
+        )
+        failed_runs_last_24h = int(
+            conn.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM runs
+                WHERE started_at IS NOT NULL
+                  AND julianday(started_at) >= julianday('now', '-1 day')
+                  AND LOWER(COALESCE(status, '')) IN ('failed', 'error')
+                """
+            ).fetchone()["c"]
+        )
+        avg_run_duration_seconds = float(
+            conn.execute(
+                """
+                SELECT COALESCE(AVG((julianday(finished_at) - julianday(started_at)) * 86400.0), 0.0) AS s
+                FROM runs
+                WHERE started_at IS NOT NULL
+                  AND finished_at IS NOT NULL
+                  AND julianday(finished_at) >= julianday(started_at)
+                """
+            ).fetchone()["s"]
+            or 0.0
+        )
+        orchestrator_running = bool(
+            conn.execute(
+                """
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM event_log
+                    WHERE LOWER(COALESCE(actor_role, '')) = 'orchestrator'
+                      AND julianday(event_time) >= julianday('now', ?)
+                ) AS is_running
+                """,
+                (f"-{2 * _tick_interval_seconds()} seconds",),
+            ).fetchone()["is_running"]
+        )
+        return {
+            "work_items_total": work_items_total,
+            "work_items_by_status": work_items_by_status,
+            "runs_total": runs_total,
+            "runs_last_24h": runs_last_24h,
+            "failed_runs_last_24h": failed_runs_last_24h,
+            "avg_run_duration_seconds": avg_run_duration_seconds,
+            "orchestrator_running": orchestrator_running,
+        }
+    finally:
+        conn.close()
 
 
 @app.get("/api/orchestrator/status")

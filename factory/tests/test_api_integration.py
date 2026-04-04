@@ -28,6 +28,52 @@ def api_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         """,
         ("wi_integration_1", "wi_integration_1", now, now),
     )
+    conn.execute(
+        """
+        INSERT INTO work_items (
+            id, parent_id, root_id, kind, title, description, status,
+            creator_role, owner_role, planning_depth, priority, retry_count,
+            created_at, updated_at
+        )
+        VALUES (?, ?, ?, 'atom', 'Integration Atom', 'seed atom', 'running',
+                'creator', 'forge', 1, 1, 0, ?, ?)
+        """,
+        ("wi_integration_2", "wi_integration_1", "wi_integration_1", now, now),
+    )
+    conn.execute(
+        """
+        INSERT INTO runs (
+            id, work_item_id, agent_id, role, run_type, status, started_at, finished_at
+        )
+        VALUES (?, ?, ?, 'forge', 'integration', ?, datetime('now', '-2 hours'), datetime('now', '-1 hours'))
+        """,
+        ("run_integration_1", "wi_integration_1", "agent_forge", "done"),
+    )
+    conn.execute(
+        """
+        INSERT INTO runs (
+            id, work_item_id, agent_id, role, run_type, status, started_at, finished_at
+        )
+        VALUES (?, ?, ?, 'forge', 'integration', ?, datetime('now', '-3 hours'), datetime('now', '-2 hours'))
+        """,
+        ("run_integration_2", "wi_integration_2", "agent_forge", "failed"),
+    )
+    conn.execute(
+        """
+        INSERT INTO event_log (
+            event_time, event_type, entity_type, entity_id, actor_role, severity, message
+        )
+        VALUES (
+            datetime('now', '-5 seconds'),
+            'heartbeat',
+            'system',
+            'orchestrator',
+            'orchestrator',
+            'info',
+            'integration heartbeat'
+        )
+        """
+    )
     conn.commit()
     conn.close()
 
@@ -111,3 +157,28 @@ def test_patch_work_item_invalid_status_value_returns_400_or_422(api_client: Tes
         json={"status": "not_a_real_status"},
     )
     assert response.status_code in (400, 422)
+
+
+def test_api_health_returns_uptime_and_db_status(api_client: TestClient) -> None:
+    response = api_client.get("/api/health")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["db_connected"] is True
+    assert isinstance(payload["uptime_seconds"], float)
+    assert payload["uptime_seconds"] >= 0.0
+
+
+def test_api_metrics_returns_operational_stats(api_client: TestClient) -> None:
+    response = api_client.get("/api/metrics")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["work_items_total"] == 2
+    assert payload["work_items_by_status"]["draft"] == 1
+    assert payload["work_items_by_status"]["running"] == 1
+    assert payload["runs_total"] == 2
+    assert payload["runs_last_24h"] == 2
+    assert payload["failed_runs_last_24h"] == 1
+    assert isinstance(payload["avg_run_duration_seconds"], float)
+    assert payload["avg_run_duration_seconds"] > 0.0
+    assert payload["orchestrator_running"] is True
