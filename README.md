@@ -1,91 +1,163 @@
-# Fabrika 2.0 — песочница (`proekt/`)
+# Fabrika2
 
-Модуль `factory/` — SQLite + FSM + оркестратор + агенты Фазы 2 (ревьюер, судья, планировщик, архитектор).
+Fabrika2 is a task-orchestration system built around **FastAPI + SQLite + FSM + agent pipeline** (Planner → Forge → Review → Judge). The project includes an operational API, worker loop, dashboard-compatible endpoints, and test coverage for API/workflow behavior.
 
-## Архитектура (канон)
+## Architecture
 
-- **UI:** `factory-os.html` → HTTP → **FastAPI** `factory/api_server.py` → SQLite (`factory/db.py`, DDL в `schema_ddl.py`).
-- **Контур:** `wire()` → `Orchestrator` (`orchestrator_core.py`) → **FSM** `fsm.py` с `guards.py` / `actions.py` → агенты (Forge, Review, Judge, Planner, Architect, …).
+### Core components
+- **API server**: `factory/api_server.py` (FastAPI endpoints, auth, orchestration controls).
+- **Database layer**: `factory/db.py` + `factory/schema_ddl.py` (SQLite WAL, schema init/migrations helpers).
+- **Workflow engine**: `factory/orchestrator_core.py`, `factory/fsm.py`, `factory/actions.py`, `factory/guards.py`.
+- **Agent roles**: `factory/agents/` (planner, forge, reviewer, judge, architect).
+- **Background worker**: `factory/worker.py` (claims queue items and executes forge pipeline).
+- **UI/static dashboard assets**: `factory-os.html`, `static/`.
 
-FSM и переходы задаются только через `schema_ddl.py` / seed в `db.py` и таблицу `state_transitions`.
+### Request flow
+1. Client calls API endpoint.
+2. Endpoint validates inputs (FastAPI + Pydantic + explicit business validation).
+3. API reads/writes SQLite through `factory/db.py` connection helpers.
+4. Orchestrator/worker advances work items through FSM transitions.
+5. Events, runs, and artifacts are persisted for dashboards and analytics.
 
-## Документация контракта
+## Configuration
 
-- **[docs/PHASE2_AGENT_CONTRACT.md](docs/PHASE2_AGENT_CONTRACT.md)** — поведение агентов и FSM, согласованное с кодом (судья: два события, эскалация `sent_to_judge`, пути архитектора, транзакции, stub планировщика).
-- **[docs/AGENT_PROMPT_CONFIG.yaml](docs/AGENT_PROMPT_CONFIG.yaml)** — MVP-конфиг промптов по ролям; отдельный генератор промптов не нужен, пока хватает YAML + § контракта.
+All production-sensitive defaults are centralized in `factory/config.py` with environment variable overrides.
 
-Дальше по приоритету: **один полный ручной E2E** (`--e2e-manual`) и проверка трейса в БД; миграции, `build_agent_prompt.py`, dashboard, context snapshots — после этого.
+### Important environment variables
+- `FACTORY_DB_PATH` (or legacy `FACTORY_DB`) — SQLite path.
+- `FACTORY_API_HOST` — API bind host (default: `127.0.0.1`).
+- `FACTORY_API_PORT` — API bind port (default: `8000`).
+- `FACTORY_TICK_INTERVAL` — orchestrator tick interval seconds (min `0.2`).
+- `FACTORY_WORKER_POLL` — worker idle poll seconds (min `0.5`).
+- `FACTORY_WORKER_TIMEOUT` — stuck running-item recovery timeout in seconds.
+- `FACTORY_SQLITE_TIMEOUT_SECONDS` — SQLite connection timeout.
+- `FACTORY_SQLITE_BUSY_TIMEOUT_MS` — SQLite busy timeout pragma.
+- `FACTORY_QWEN_DECOMPOSE_TIMEOUT` — timeout for `/api/visions/{id}/decompose` calls.
+- `FACTORY_QWEN_FIX_TIMEOUT` — timeout for `/api/qwen/fix` calls.
+- `FACTORY_API_KEY` — if set, mutating endpoints require `X-API-Key` header.
 
-## База данных (dev)
+## Setup
 
-При смене DDL или seed в `factory/schema_ddl.py` допустимо **удалить `factory.db`** и поднять базу с нуля (`init_db`). Миграции для этой песочницы не обязательны на текущей стадии.
-
-## Сбои forge-run (run.failed.*)
-
-После неуспешного `run_qwen_cli` в журнале сущности `run` уточняют причину:
-
-- **`run.failed.account_exhausted`** — ни один аккаунт не доступен (cooldown / исчерпание пула).
-- **`run.failed.account_rotation_limit`** — исчерпан лимит итераций ротации без успешного вызова CLI.
-- **`run.failed.cli_error`** — ненулевой exit, таймаут, ошибка запуска и т.п. (не квота в смысле «все слоты»).
-
-## Forge: промпт, песочница, реальная кузница
-
-- **`factory/forge_prompt.py`** — сборка текста для Qwen из атома: объявленные файлы, содержимое read/modify из рабочей копии, комментарии, решения (`decisions`), задача.
-- **`factory/forge_sandbox.py`** — временная директория, копии файлов, после CLI — diff → `file_changes` и шаги `file_write`. Папка удаляется после прогона; путь на момент работы пишется в `runs.sandbox_ref`.
-- **`FACTORY_WORKSPACE_ROOT`** — корень репозитория для чтения исходников (по умолчанию текущий каталог процесса). Запускайте E2E и оркестратор из каталога `proekt/`, чтобы пути вроде `factory/models.py` совпадали с файлами на диске.
-- **`FACTORY_QWEN_DRY_RUN=1`** — без subprocess; после «успеха» в песочнице добавляется маркер diff (dry placeholder), чтобы в БД были реальные `file_changes` и `file_write`.
-- **Реальный Qwen** (`FACTORY_QWEN_DRY_RUN=0`): CLI вызывается с `cwd` = песочница и полным промптом; ожидается, что инструмент правит файлы в этой директории. Автокоммит git в репозиторий фабрики в этом MVP не делается.
-- **Канонический режим для реального редактирования через QWEN-CODE-CLI:** промпт передаётся в **stdin** (`FACTORY_QWEN_PROMPT_VIA=stdin`, значение по умолчанию в `factory/qwen_cli_runner.py` — вызов вида `qwen … -p -`). Режим argv не считается основным для forge из‑за длины промпта и лимита командной строки на Windows. Зафиксировано в [docs/PHASE2_AGENT_CONTRACT.md](docs/PHASE2_AGENT_CONTRACT.md) (раздел 7).
-- **MVP-контур с внешним агентом:** при зелёном `python -m factory --e2e-qwen-wet-edit` с `FACTORY_QWEN_DRY_RUN=0` подтверждены реальный diff в `file_changes` и прохождение атома до `done` (задача → judge → forge → Qwen меняет файл → артефакт → review).
-
-### Дальше (устойчивость real-run)
-
-Реализовано: ``--e2e-qwen-wet-failover`` (ротация после симулированного 429), ``--e2e-qwen-wet-forge-no-artifact`` (успех CLI без diff → ``run.failed.forge_no_artifact``). Общий штатный путь подготовки атома до ``ready_for_work``: ``factory/e2e_qwen_wet_shared.drive_wet_hello_atom_to_ready_for_work`` (используется всеми тремя wet-E2E).
-
-## Tests (E2E)
-
-Из каталога `proekt/` (нужен `.env` с `FACTORY_API_KEY_1`):
-
+### 1) Install dependencies
 ```bash
-python -m factory --e2e-manual
-python -m factory --e2e-qwen-dry
-python -m factory --e2e-two-atoms
-# только локально, FACTORY_QWEN_DRY_RUN=0:
-python -m factory --e2e-qwen-wet-edit
-python -m factory --e2e-qwen-wet-failover
-python -m factory --e2e-qwen-wet-forge-no-artifact
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-- **`--e2e-manual`** — happy path: vision → epic → atom → judge → forge-worker (`qwen_cli_runner`, по умолчанию dry-run) → review → `done`. БД `factory_e2e_manual.db`, `assert_happy_atom()` / `assert_trace_integrity()`.
-- **`--e2e-qwen-dry`** — тот же маршрут во временной БД + контракт с раннером и песочницей (`qwen.run.invocation`, `qwen_cli_runner`, шаги `file_write`, `file_changes`). `FACTORY_QWEN_DRY_RUN=1` в CI. Для прогона с настоящим бинарником: `FACTORY_QWEN_DRY_RUN=0` и тот же флаг из каталога `proekt/`.
-- **`--e2e-qwen-wet-edit`** — отдельный атом с одним файлом `factory/hello_qwen.py` и прямой задачей на правку; **только при `FACTORY_QWEN_DRY_RUN=0`**. Проверяет, что в БД есть `file_changes` (modify) и `file_write` по этому пути. Нужен реальный `qwen`, запуск из `proekt/`. Промпт в stdin — канон по умолчанию; при сбоях см. `.env.example`: `FACTORY_QWEN_EXTRA_ARGS`, `FACTORY_QWEN_MAX_SESSION_TURNS`, `FACTORY_QWEN_DEBUG=1`.
-- **`--e2e-qwen-wet-failover`** — тот же сценарий, что wet-edit, но первый вызов CLI в раннере симулирует rate limit (`FACTORY_QWEN_E2E_SIMULATE_RATE_LIMIT_ON_FIRST_CALL`); второй аккаунт реально вызывает Qwen. Нужны **минимум два** API-аккаунта и `FACTORY_QWEN_DRY_RUN=0`.
-- **`--e2e-qwen-wet-forge-no-artifact`** — wet без изменения объявленных modify-файлов после «успешного» CLI: ожидается `forge_failed`, событие `run.failed.forge_no_artifact`, атом в `ready_for_work`. Использует E2E-хук без реального Qwen (см. `FACTORY_QWEN_E2E_SIMULATE_OK_NO_FILE_CHANGE`).
-- **`--e2e-two-atoms`** — один epic, два атома: первый до `done`, второй с принудительным отказом ревью / эскалация. БД `factory_e2e_two_atoms.db`.
-
-В корневом CI job `factory-e2e` сценарии из workflow должны проходить без `AssertionError`.
-
-## CLI
-
-Из каталога `proekt/` (нужен `.env` с `FACTORY_API_KEY_1`):
-
+### 2) Configure environment
 ```bash
-python -m factory --demo
-python -m factory --run
-python -m factory --e2e-golden
-python -m factory --e2e-chain
-python -m factory --e2e-manual
-python -m factory --e2e-qwen-dry
-python -m factory --e2e-live
-python -m factory --e2e-two-atoms
-# локально, см. wet-E2E в Tests (E2E)
+export FACTORY_DB_PATH=/absolute/path/to/factory.db
+export FACTORY_API_PORT=8000
+# Optional auth for mutating endpoints:
+export FACTORY_API_KEY=change-me
 ```
 
-- `--e2e-golden` — минимальный путь: атом уже в `in_review` → один `tick()` → `done`.
-- `--e2e-chain` — цепочка: `ready_for_judge` → судья → кузница (`forge_started`) → вызов `forge_completed` из сценария → ревьюер → `done` (временная БД; реальная Кузница не нужна).
-- **`--e2e-manual`** — см. **Tests (E2E)**; SQL для отладки — в докстринге `factory/e2e_manual_trace.py`.
-- **`--e2e-qwen-dry`** — см. **Tests (E2E)** и блок про сбои forge-run выше.
-- **`--e2e-live`** — см. **Tests (E2E)** (по умолчанию dry; smoke при wet).
-- **`--e2e-qwen-wet-edit`** — см. **Tests (E2E)** (только `FACTORY_QWEN_DRY_RUN=0`).
-- **`--e2e-qwen-wet-failover`** / **`--e2e-qwen-wet-forge-no-artifact`** — см. **Tests (E2E)**.
-- **`--e2e-two-atoms`** — см. **Tests (E2E)** выше.
+### 3) Run API
+```bash
+python -m factory.api_server
+```
+
+### 4) Run background worker (optional but recommended in production)
+```bash
+python -m factory.worker --id worker-1 --poll 3
+```
+
+## API overview
+
+> All endpoints now use request/query/path validation and return proper HTTP codes:
+> - `400` for malformed business input,
+> - `422` for schema/type validation failures,
+> - `404` for missing entities.
+
+### Health & orchestration
+- `GET /health`
+- `GET /api/orchestrator/status`
+- `POST /api/orchestrator/start`
+- `POST /api/orchestrator/stop`
+- `POST /api/orchestrator/tick`
+
+### Work items
+- `GET /api/work-items`
+- `GET /api/work-items/tree`
+- `GET /api/work-items/{wi_id}`
+- `GET /api/work-items/{wi_id}/runs`
+- `PATCH /api/work-items/{wi_id}`
+- `POST /api/work-items/{wi_id}/cancel`
+- `POST /api/work-items/{wi_id}/archive`
+- `POST /api/work-items/{wi_id}/run`
+- `DELETE /api/work-items/{wi_id}`
+
+### Runs/events/analytics
+- `GET /api/runs`
+- `GET /api/runs/{run_id}`
+- `GET /api/runs/{run_id}/steps`
+- `GET /api/events`
+- `GET /api/journal`
+- `GET /api/analytics`
+- `GET /api/stats`
+
+### Vision and Qwen endpoints
+- `GET /api/visions`
+- `POST /api/visions`
+- `POST /api/visions/{vision_id}/decompose`
+- `POST /api/chat/qwen`
+- `GET /api/chat/qwen/{chat_id}/stream`
+- `POST /api/qwen/fix`
+
+## API examples
+
+### Create a vision
+```bash
+curl -X POST http://127.0.0.1:8000/api/visions \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: change-me' \
+  -d '{"title":"Improve deployment reliability","description":"Reduce failed deployments and MTTR"}'
+```
+
+### Patch work item metadata
+```bash
+curl -X PATCH http://127.0.0.1:8000/api/work-items/wi_123 \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: change-me' \
+  -d '{"title":"Updated title","description":"Updated details"}'
+```
+
+### Read recent runs for a work item
+```bash
+curl "http://127.0.0.1:8000/api/runs?work_item_id=wi_123&limit=50"
+```
+
+### Typical error response examples
+```json
+{"detail":"work_item not found"}
+```
+(HTTP 404)
+
+```json
+{"detail":"id required"}
+```
+(HTTP 400)
+
+```json
+{"detail":[{"type":"string_too_short", "loc":["path","wi_id"], "msg":"String should have at least 1 character"}]}
+```
+(HTTP 422)
+
+## Testing
+
+Run all tests:
+```bash
+pytest -q
+```
+
+If you want only API-focused tests:
+```bash
+pytest -q factory/tests/test_api_*.py
+```
+
+## Notes for production
+- Keep SQLite on fast local disk; keep WAL enabled.
+- Protect mutating endpoints via `FACTORY_API_KEY` and network controls.
+- Run API and worker as separate supervised processes.
+- Add log shipping/metrics around `event_log`, `runs`, and worker heartbeats.

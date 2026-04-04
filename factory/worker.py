@@ -21,23 +21,30 @@ from typing import Any
 
 from .agents import forge
 from .composition import wire
-from .config import resolve_db_path
+from .config import (
+    SQLITE_BUSY_TIMEOUT_MS,
+    SQLITE_TIMEOUT_SECONDS,
+    WORKER_POLL_SECONDS,
+    WORKER_STUCK_TIMEOUT_SECONDS,
+    resolve_db_path,
+)
 from .logging import FactoryLogger
 from .models import EventType, Role, Severity
 from .queue_ops import claim_forge_inbox_atom, release_queue_lease
 from .worker_pipeline import drain_atom_downstream
 
 _HEARTBEAT_INTERVAL_SEC = 30.0
-_STUCK_WORK_ITEM_TIMEOUT_SEC = 300.0
+_STUCK_WORK_ITEM_TIMEOUT_SEC = WORKER_STUCK_TIMEOUT_SECONDS
 
 
 def _env_poll_sec() -> float:
-    raw = (os.environ.get("FACTORY_WORKER_POLL") or "5").strip()
+    raw = (os.environ.get("FACTORY_WORKER_POLL") or "").strip()
+    if not raw:
+        return WORKER_POLL_SECONDS
     try:
-        v = float(raw)
-        return max(0.5, v)
+        return max(0.5, float(raw))
     except ValueError:
-        return 5.0
+        return WORKER_POLL_SECONDS
 
 
 def _env_worker_id() -> str:
@@ -62,10 +69,10 @@ def _touch_work_item_heartbeat(conn: sqlite3.Connection, work_item_id: str) -> N
 @contextlib.contextmanager
 def _heartbeat_loop(db_path: Path, work_item_id: str):
     stop = threading.Event()
-    hb_conn = sqlite3.connect(str(db_path), timeout=30.0, check_same_thread=False)
+    hb_conn = sqlite3.connect(str(db_path), timeout=SQLITE_TIMEOUT_SECONDS, check_same_thread=False)
     hb_conn.row_factory = sqlite3.Row
     hb_conn.execute("PRAGMA journal_mode = WAL")
-    hb_conn.execute("PRAGMA busy_timeout = 30000")
+    hb_conn.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
 
     def _runner() -> None:
         try:
@@ -200,7 +207,7 @@ def worker_iteration(factory: dict[str, Any], worker_id: str) -> bool:
 
 def _apply_worker_sqlite_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA busy_timeout = 30000")
+    conn.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
 
 
 def run_worker_loop(*, worker_id: str, poll_sec: float) -> None:
