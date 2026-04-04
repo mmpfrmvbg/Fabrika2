@@ -90,7 +90,7 @@ def test_get_work_items_returns_items_array(api_client: TestClient) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert "items" in payload
-    assert payload["limit"] == 100
+    assert payload["limit"] == 50
     assert payload["offset"] == 0
     assert payload["total"] == 2
     assert payload["has_more"] is False
@@ -116,8 +116,32 @@ def test_get_work_items_supports_limit_and_offset(api_client: TestClient) -> Non
 
 
 def test_get_work_items_limit_max_validation(api_client: TestClient) -> None:
-    response = api_client.get("/api/work-items?limit=1001")
+    response = api_client.get("/api/work-items?limit=501")
     assert response.status_code == 422
+
+
+def test_get_work_items_supports_status_filter(api_client: TestClient) -> None:
+    response = api_client.get("/api/work-items?status=running")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert all(item["status"] == "running" for item in payload["items"])
+
+
+def test_events_endpoint_streams_sse(api_client: TestClient) -> None:
+    with api_client.stream("GET", "/api/events?last_event_id=0&once=1") as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        lines = response.iter_lines()
+        first_data_line = ""
+        for line in lines:
+            if line.startswith("data: "):
+                first_data_line = line
+                break
+        assert first_data_line.startswith("data: {")
+        assert '"id":' in first_data_line
+        assert '"type":' in first_data_line
+        assert '"payload":' in first_data_line
 
 
 def test_get_work_item_by_id_existing_and_nonexistent(api_client: TestClient) -> None:

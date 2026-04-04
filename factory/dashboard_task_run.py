@@ -51,6 +51,7 @@ def accept_dashboard_task_run(wi_id: str) -> tuple[bool, dict, int]:
     logger = factory["logger"]
     deny: tuple[bool, dict, int] | None = None
     try:
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
             "SELECT id, kind, status FROM work_items WHERE id = ?",
             (wi_id,),
@@ -76,7 +77,36 @@ def accept_dashboard_task_run(wi_id: str) -> tuple[bool, dict, int]:
                     {"ok": False, "error": "forge run already in progress"},
                     409,
                 )
-            elif _active_forge_run_count(conn, wi_id) > 0:
+            else:
+                existing = conn.execute(
+                    """
+                    SELECT id
+                    FROM runs
+                    WHERE work_item_id = ?
+                      AND status IN ('queued', 'running')
+                    ORDER BY started_at DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (wi_id,),
+                ).fetchone()
+                if existing is not None:
+                    existing_run_id = str(existing["id"])
+                    _log_denied(
+                        logger,
+                        wi_id,
+                        f"run already in progress (existing_run_id={existing_run_id})",
+                    )
+                    conn.commit()
+                    deny = (
+                        False,
+                        {
+                            "ok": False,
+                            "error": "run already in progress",
+                            "existing_run_id": existing_run_id,
+                        },
+                        409,
+                    )
+            if deny is None and _active_forge_run_count(conn, wi_id) > 0:
                 _log_denied(logger, wi_id, "forge run already queued or running")
                 conn.commit()
                 deny = (
@@ -84,7 +114,7 @@ def accept_dashboard_task_run(wi_id: str) -> tuple[bool, dict, int]:
                     {"ok": False, "error": "forge run already queued or running"},
                     409,
                 )
-            elif row["status"] != "ready_for_work":
+            elif deny is None and row["status"] != "ready_for_work":
                 _log_denied(
                     logger,
                     wi_id,
@@ -120,6 +150,9 @@ def accept_dashboard_task_run(wi_id: str) -> tuple[bool, dict, int]:
                 (wi_id, QueueName.FORGE_INBOX.value),
             )
             conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 

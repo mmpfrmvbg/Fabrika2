@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 
 
 from factory.dashboard_task_run import accept_dashboard_task_run
@@ -169,3 +170,65 @@ def test_accept_dashboard_409_in_progress(monkeypatch, tmp_path) -> None:
     ok, data, code = accept_dashboard_task_run("atom_ip")
     assert ok is False
     assert code == 409
+
+
+def test_accept_dashboard_409_with_existing_run_id(monkeypatch, tmp_path) -> None:
+    db = tmp_path / "dr_existing_run.db"
+    monkeypatch.setenv("FACTORY_DB_PATH", str(db))
+    conn = init_db(db)
+    _insert_ready_atom(conn, "atom_busy")
+    conn.execute(
+        """
+        INSERT INTO runs (id, work_item_id, agent_id, role, run_type, status, started_at)
+        VALUES ('run_busy', 'atom_busy', 'agent_forge', 'forge', 'implement', 'running',
+                '2026-03-30T12:00:00.000000Z')
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    ok, data, code = accept_dashboard_task_run("atom_busy")
+    assert ok is False
+    assert code == 409
+    assert data.get("error") == "run already in progress"
+    assert data.get("existing_run_id") == "run_busy"
+
+
+def test_active_run_unique_index_blocks_concurrent_double_insert(monkeypatch, tmp_path) -> None:
+    db = tmp_path / "dr_unique_idx.db"
+    monkeypatch.setenv("FACTORY_DB_PATH", str(db))
+    conn = init_db(db)
+    _insert_ready_atom(conn, "atom_idx")
+    conn.commit()
+    conn.close()
+
+    barrier = threading.Barrier(2)
+    results: list[str] = []
+
+    def _insert_run(run_id: str) -> None:
+        c = sqlite3.connect(str(db), timeout=5.0, check_same_thread=False)
+        try:
+            barrier.wait(timeout=5.0)
+            c.execute(
+                """
+                INSERT INTO runs (id, work_item_id, agent_id, role, run_type, status, started_at)
+                VALUES (?, 'atom_idx', 'agent_forge', 'forge', 'implement', 'queued',
+                        '2026-03-30T12:00:00.000000Z')
+                """,
+                (run_id,),
+            )
+            c.commit()
+            results.append("ok")
+        except sqlite3.IntegrityError:
+            results.append("integrity_error")
+        finally:
+            c.close()
+
+    t1 = threading.Thread(target=_insert_run, args=("run_a",), daemon=True)
+    t2 = threading.Thread(target=_insert_run, args=("run_b",), daemon=True)
+    t1.start()
+    t2.start()
+    t1.join(timeout=5.0)
+    t2.join(timeout=5.0)
+
+    assert sorted(results) == ["integrity_error", "ok"]

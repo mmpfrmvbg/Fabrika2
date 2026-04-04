@@ -12,6 +12,7 @@ Read-only HTTP API для дашборда (SQLite WAL, mode=ro).
 from __future__ import annotations
 
 import argparse
+import asyncio
 import csv
 from contextlib import asynccontextmanager
 import io
@@ -30,7 +31,7 @@ from typing import Any
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Path as FastPath, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from .config import (
@@ -789,7 +790,7 @@ def orchestrator_tick(_: None = Depends(require_api_key)) -> dict[str, Any]:
 def list_work_items(
     status: str | None = None,
     parent_id: str | None = None,
-    limit: int = Query(default=100, ge=1, le=1000),
+    limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     conn = _open_ro()
@@ -1037,13 +1038,13 @@ def post_bulk_archive(
 def post_work_item_run(
     wi_id: str = FastPath(..., min_length=1, max_length=128),
     _: None = Depends(require_api_key),
-) -> dict[str, Any]:
+) -> Any:
     """Запуск forge для атома (тот же путь, что POST /api/tasks/…/forge-run в dashboard_api)."""
     from .dashboard_task_run import accept_dashboard_task_run
 
     ok, body, status = accept_dashboard_task_run(wi_id)
     if not ok:
-        raise HTTPException(status_code=status, detail=body)
+        return JSONResponse(status_code=status, content=body)
     return {
         "started": True,
         "run_id": body.get("run_id"),
@@ -1346,7 +1347,6 @@ def get_effective_run_id(run_id: str = FastPath(..., min_length=1, max_length=12
         conn.close()
 
 
-@app.get("/api/events")
 def list_events(
     limit: int = Query(10, ge=1, le=500),
     work_item_id: str | None = None,
@@ -1368,6 +1368,65 @@ def list_events(
         return {"items": _rows(rows), "limit": limit}
     finally:
         conn.close()
+
+
+@app.get("/api/events")
+async def stream_events(
+    request: Request,
+    last_event_id: int = Query(default=0, ge=0),
+    once: bool = Query(default=False),
+) -> StreamingResponse:
+    async def _event_stream() -> Any:
+        cursor = int(last_event_id)
+        while True:
+            if await request.is_disconnected():
+                break
+            conn = _open_ro()
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT id, event_type, payload
+                    FROM event_log
+                    WHERE id > ?
+                    ORDER BY id ASC
+                    """,
+                    (cursor,),
+                ).fetchall()
+            finally:
+                conn.close()
+
+            if rows:
+                for row in rows:
+                    cursor = int(row["id"])
+                    payload_raw = row["payload"]
+                    payload_obj: dict[str, Any] = {}
+                    if isinstance(payload_raw, str) and payload_raw.strip():
+                        try:
+                            parsed = json.loads(payload_raw)
+                            if isinstance(parsed, dict):
+                                payload_obj = parsed
+                        except Exception:
+                            payload_obj = {}
+                    event_data = {
+                        "id": cursor,
+                        "type": row["event_type"],
+                        "payload": payload_obj,
+                    }
+                    yield f"data: {json.dumps(event_data, ensure_ascii=False)}\n\n"
+            else:
+                yield ": keep-alive\n\n"
+            if once:
+                break
+            await asyncio.sleep(1.0)
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.get("/api/journal")

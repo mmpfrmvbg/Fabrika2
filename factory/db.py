@@ -305,6 +305,13 @@ def _migration_sqlite_performance_indexes(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_work_items_created_at ON work_items(created_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_work_item_id ON runs(work_item_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(started_at)")
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_runs_active_per_work_item
+        ON runs(work_item_id)
+        WHERE status IN ('queued','running')
+        """
+    )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_entity_id ON event_log(entity_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_event_type ON event_log(event_type)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_created_at ON event_log(event_time)")
