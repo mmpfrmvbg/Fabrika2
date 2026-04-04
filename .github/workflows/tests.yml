@@ -26,17 +26,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run linter (ruff/flake8/pylint fallback)
-        run: |
-          if command -v ruff >/dev/null 2>&1; then
-            ruff check factory/
-          elif command -v flake8 >/dev/null 2>&1; then
-            flake8 factory/
-          elif command -v pylint >/dev/null 2>&1; then
-            pylint factory/
-          else
-            pip install flake8
-            flake8 factory/
-          fi
+        run: make lint
 
       - name: Check Python syntax
         run: |
@@ -73,6 +63,7 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     needs: test
+    if: ${{ always() && needs.test.result == 'success' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -87,16 +78,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest-cov
 
-      - name: Run coverage
-        run: python -m pytest factory/tests/ --cov=factory --cov-report=term-missing --cov-report=xml:coverage.xml
+      - name: Run coverage (70% minimum)
+        run: make coverage
 
-      - name: Upload coverage report
+      - name: Upload coverage reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: coverage.xml
+          path: |
+            coverage.xml
+            htmlcov/
 
       - name: Build coverage summary
         id: coverage_summary
@@ -106,14 +99,12 @@ jobs:
           root = ET.parse('coverage.xml').getroot()
           line_rate = float(root.attrib.get('line-rate', 0.0)) * 100
           branch_rate = float(root.attrib.get('branch-rate', 0.0)) * 100
-          summary = f"### Coverage Summary\\n- Line coverage: **{line_rate:.2f}%**\\n- Branch coverage: **{branch_rate:.2f}%**"
+          summary = f"### Coverage Summary\\n- Line coverage: **{line_rate:.2f}%**\\n- Branch coverage: **{branch_rate:.2f}%**\\n- Threshold: **70% minimum**"
           with open('coverage-summary.md', 'w', encoding='utf-8') as f:
             f.write(summary)
-          with open('coverage-summary.md', 'r', encoding='utf-8') as f:
-            content = f.read()
           with open(__import__('os').environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
             out.write('summary<<EOF\\n')
-            out.write(content + '\\n')
+            out.write(summary + '\\n')
             out.write('EOF\\n')
           PY
 
