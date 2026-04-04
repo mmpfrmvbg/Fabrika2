@@ -12,7 +12,12 @@ from factory.worker import recover_stuck_running_work_items
 
 class StuckRecoveryTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.path = Path(tempfile.mkstemp(prefix="factory_stuck_recovery_", suffix=".db")[1])
+        self.path = Path(
+            tempfile.mkstemp(
+                prefix="factory_stuck_recovery_",
+                suffix=".db",
+            )[1]
+        )
         self.conn = init_db(self.path)
         self.logger = FactoryLogger(self.conn)
 
@@ -26,7 +31,9 @@ class StuckRecoveryTests(unittest.TestCase):
     def test_schema_v10_adds_last_heartbeat_at_column(self) -> None:
         cols = {
             row["name"]
-            for row in self.conn.execute("PRAGMA table_info(work_items)").fetchall()
+            for row in self.conn.execute(
+                "PRAGMA table_info(work_items)"
+            ).fetchall()
         }
         self.assertIn("last_heartbeat_at", cols)
 
@@ -35,10 +42,14 @@ class StuckRecoveryTests(unittest.TestCase):
             """
             INSERT INTO work_items (
                 id, parent_id, root_id, kind, title, description, status,
-                previous_status, creator_role, owner_role, planning_depth, priority
+                previous_status, creator_role, owner_role,
+                planning_depth, priority
             )
-            VALUES ('wi_stuck_null', NULL, 'wi_stuck_null', 'atom', 'A', '', 'running',
-                    'ready_for_work', 'planner', 'forge', 0, 100)
+            VALUES (
+                'wi_stuck_null', NULL, 'wi_stuck_null', 'atom',
+                'A', '', 'running', 'ready_for_work',
+                'planner', 'forge', 0, 100
+            )
             """
         )
         self.conn.commit()
@@ -50,7 +61,8 @@ class StuckRecoveryTests(unittest.TestCase):
         self.assertEqual(recovered, 1)
 
         row = self.conn.execute(
-            "SELECT status, previous_status, last_heartbeat_at FROM work_items WHERE id = 'wi_stuck_null'"
+            "SELECT status, previous_status, last_heartbeat_at "
+            "FROM work_items WHERE id = 'wi_stuck_null'"
         ).fetchone()
         self.assertEqual(row["status"], "ready_for_work")
         self.assertEqual(row["previous_status"], "running")
@@ -72,11 +84,14 @@ class StuckRecoveryTests(unittest.TestCase):
             """
             INSERT INTO work_items (
                 id, parent_id, root_id, kind, title, description, status,
-                previous_status, creator_role, owner_role, planning_depth, priority, last_heartbeat_at
+                previous_status, creator_role, owner_role,
+                planning_depth, priority, last_heartbeat_at
             )
             VALUES (
-                'wi_recent_running', NULL, 'wi_recent_running', 'atom', 'A2', '', 'running',
-                'ready_for_work', 'planner', 'forge', 0, 100, strftime('%Y-%m-%dT%H:%M:%f','now')
+                'wi_recent_running', NULL, 'wi_recent_running',
+                'atom', 'A2', '', 'running', 'ready_for_work',
+                'planner', 'forge', 0, 100,
+                strftime('%Y-%m-%dT%H:%M:%f', 'now')
             )
             """
         )
@@ -93,21 +108,28 @@ class StuckRecoveryTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual(row["status"], "running")
 
-    def test_recovery_releases_queue_lease_and_item_can_be_reclaimed(self) -> None:
+    def test_recovery_releases_queue_lease_and_item_can_be_reclaimed(
+        self,
+    ) -> None:
         self.conn.execute(
             """
             INSERT INTO work_items (
                 id, parent_id, root_id, kind, title, description, status,
-                previous_status, creator_role, owner_role, planning_depth, priority
+                previous_status, creator_role, owner_role,
+                planning_depth, priority
             )
-            VALUES ('wi_crash', NULL, 'wi_crash', 'atom', 'Crash atom', '', 'running',
-                    'ready_for_work', 'planner', 'forge', 0, 100)
+            VALUES (
+                'wi_crash', NULL, 'wi_crash', 'atom', 'Crash atom',
+                '', 'running', 'ready_for_work',
+                'planner', 'forge', 0, 100
+            )
             """
         )
         self.conn.execute(
             """
             INSERT INTO work_item_queue (
-                work_item_id, queue_name, lease_owner, lease_until, attempts, max_attempts
+                work_item_id, queue_name, lease_owner, lease_until,
+                attempts, max_attempts
             )
             VALUES (
                 'wi_crash', 'forge_inbox', 'worker-1',
@@ -130,7 +152,9 @@ class StuckRecoveryTests(unittest.TestCase):
 
         self.conn.execute(
             """
-            INSERT INTO work_item_queue (work_item_id, queue_name, attempts, max_attempts)
+            INSERT INTO work_item_queue (
+                work_item_id, queue_name, attempts, max_attempts
+            )
             VALUES ('wi_crash', 'forge_inbox', 0, 3)
             """
         )
