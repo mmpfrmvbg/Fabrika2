@@ -189,6 +189,55 @@ def api_work_items_list(
     return {"items": items, "count": len(items)}
 
 
+def get_work_items_paginated(
+    conn: sqlite3.Connection,
+    limit: int,
+    offset: int,
+    filters: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Пагинированный список work_items c общим количеством."""
+    filters = filters or {}
+    wheres: list[str] = []
+    params: list[Any] = []
+    status = filters.get("status")
+    parent_id = filters.get("parent_id")
+    if status:
+        wheres.append("status = ?")
+        params.append(str(status))
+    if parent_id is not None:
+        if parent_id == "":
+            wheres.append("parent_id IS NULL")
+        else:
+            wheres.append("parent_id = ?")
+            params.append(parent_id)
+    where_sql = (" WHERE " + " AND ".join(wheres)) if wheres else ""
+
+    total = int(
+        conn.execute(
+            f"SELECT COUNT(*) AS c FROM work_items{where_sql}",
+            params,
+        ).fetchone()["c"]
+    )
+    rows = conn.execute(
+        f"""
+        SELECT id, kind, parent_id, title, status, created_at
+        FROM work_items
+        {where_sql}
+        ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
+        """,
+        [*params, limit, offset],
+    ).fetchall()
+    items = [dict(r) for r in rows]
+    return {
+        "items": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": (offset + len(items)) < total,
+    }
+
+
 def api_task_detail(conn: sqlite3.Connection, wi_id: str) -> dict[str, Any]:
     row = conn.execute("SELECT * FROM work_items WHERE id = ?", (wi_id,)).fetchone()
     if not row:

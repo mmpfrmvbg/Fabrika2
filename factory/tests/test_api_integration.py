@@ -87,8 +87,34 @@ def test_get_work_items_returns_items_array(api_client: TestClient) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert "items" in payload
+    assert payload["limit"] == 100
+    assert payload["offset"] == 0
+    assert payload["total"] == 2
+    assert payload["has_more"] is False
     assert isinstance(payload["items"], list)
     assert any(item["id"] == "wi_integration_1" for item in payload["items"])
+
+
+def test_get_work_items_supports_limit_and_offset(api_client: TestClient) -> None:
+    response = api_client.get("/api/work-items?limit=1&offset=0")
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["items"]) == 1
+    assert payload["limit"] == 1
+    assert payload["offset"] == 0
+    assert payload["total"] == 2
+    assert payload["has_more"] is True
+
+    response_page_2 = api_client.get("/api/work-items?limit=1&offset=1")
+    assert response_page_2.status_code == 200
+    payload_page_2 = response_page_2.json()
+    assert len(payload_page_2["items"]) == 1
+    assert payload_page_2["has_more"] is False
+
+
+def test_get_work_items_limit_max_validation(api_client: TestClient) -> None:
+    response = api_client.get("/api/work-items?limit=1001")
+    assert response.status_code == 422
 
 
 def test_get_work_item_by_id_existing_and_nonexistent(api_client: TestClient) -> None:

@@ -114,9 +114,10 @@ export const api = {
     return fetchJson('/api/work-items/tree');
   },
 
-  async getWorkItems(filters = {}) {
+  async getWorkItems(filters = {}, pagination = {}) {
     const url = new URL('/api/work-items', API_BASE);
-    Object.entries(filters).forEach(([k, v]) => {
+    const params = { ...filters, ...pagination };
+    Object.entries(params).forEach(([k, v]) => {
       if (v !== null && v !== undefined) {
         url.searchParams.set(k, v);
       }
