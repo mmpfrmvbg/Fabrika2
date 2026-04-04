@@ -327,7 +327,7 @@ export const store = {
       this.update({
         failures: {
           items: this._normalizeArray(failures?.items || failures),
-          clusters: this._normalizeArray(failures?.clusters, 'clusters')
+          clusters: this._normalizeArray(failures?.clusters)
         }
       });
     } catch (error) {
