@@ -447,7 +447,6 @@ def _forge_queue(conn: sqlite3.Connection) -> dict:
     ).fetchall()
     queue = [dict(x) for x in qrows]
     wis = _work_items_with_files(conn)
-    by_id = {w["id"]: w for w in wis}
     # атомы в типичных forge-статусах для карточек
     forge_wi = [
         w

@@ -1963,14 +1963,22 @@ def create_vision(
         # stats: из контракта planner output
         def _stats(items) -> dict[str, int]:
             c = {"epics": 0, "stories": 0, "tasks": 0, "atoms": 0}
+
             def walk(it):
                 k = it.kind
-                if k == "epic": c["epics"] += 1
-                elif k == "story": c["stories"] += 1
-                elif k == "task": c["tasks"] += 1
-                elif k == "atom": c["atoms"] += 1
-                for ch in it.children: walk(ch)
-            for it in items: walk(it)
+                if k == "epic":
+                    c["epics"] += 1
+                elif k == "story":
+                    c["stories"] += 1
+                elif k == "task":
+                    c["tasks"] += 1
+                elif k == "atom":
+                    c["atoms"] += 1
+                for ch in it.children:
+                    walk(ch)
+
+            for it in items:
+                walk(it)
             return c
         stats = _stats(out.items)
         conn.commit()

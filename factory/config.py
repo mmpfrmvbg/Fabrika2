@@ -9,6 +9,8 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
+from .models import EventType, Severity
+
 DB_PATH = Path("factory.db")
 
 _PROEKT_ROOT = Path(__file__).resolve().parent.parent
@@ -216,8 +218,6 @@ QWEN_FIX_TIMEOUT_SECONDS = env_int("FACTORY_QWEN_FIX_TIMEOUT", 120, minimum=1)
 ORCHESTRATOR_TICK_INTERVAL_SECONDS = env_float("FACTORY_TICK_INTERVAL", 3.0, minimum=0.2)
 FACTORY_WEBHOOK_URL = (os.environ.get("FACTORY_WEBHOOK_URL") or "").strip() or None
 FACTORY_WEBHOOK_SECRET = (os.environ.get("FACTORY_WEBHOOK_SECRET") or "").strip() or None
-
-from .models import EventType, Severity
 
 if TYPE_CHECKING:  # pragma: no cover
     pass

@@ -7,9 +7,9 @@ import json
 
 import pytest
 
-httpretty = pytest.importorskip("httpretty")
-
 from factory import webhooks
+
+httpretty = pytest.importorskip("httpretty")
 
 
 @httpretty.activate(allow_net_connect=False)

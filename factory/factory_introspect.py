@@ -277,7 +277,6 @@ class FactoryIntrospector:
             sr = c.get("source_ref")
             if st is None:
                 continue
-            key = (st, sr or "")
             row = conn.execute(
                 """
                 SELECT id, frequency FROM improvement_candidates
