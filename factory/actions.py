@@ -75,15 +75,20 @@ class Actions:
             "run_type": RunType.IMPLEMENT.value,
             "trigger": "action_start_forge_run",
         }
+        wi_retry_count_row = self.conn.execute(
+            "SELECT retry_count FROM work_items WHERE id = ?",
+            (wi_id,),
+        ).fetchone()
+        run_retry_count = int((wi_retry_count_row["retry_count"] if wi_retry_count_row else 0) or 0)
 
         # Сначала runs: file_locks.run_id REFERENCES runs(id) при включённых FK
         self.conn.execute(
             """
             INSERT INTO runs (
                 id, work_item_id, agent_id, account_id, role, run_type, status,
-                input_payload, input_hash, agent_version, prompt_version, model_name_snapshot, model_params_json
+                input_payload, input_hash, agent_version, prompt_version, model_name_snapshot, model_params_json, retry_count
             )
-            VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -98,6 +103,7 @@ class Actions:
                 prompt_version,
                 model_name_snapshot,
                 model_params_json,
+                run_retry_count,
             ),
         )
 

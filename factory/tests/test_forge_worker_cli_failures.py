@@ -252,6 +252,51 @@ class ForgeWorkerCliFailuresTest(unittest.TestCase):
             else:
                 os.environ["FACTORY_QWEN_DRY_RUN"] = prev_dry
 
+    def test_idempotency_cache_hit_skips_second_llm_call(self) -> None:
+        f = wire(self.db_path)
+        conn = f["conn"]
+        orch = f["orchestrator"]
+        wi_id = "wi_ut_cache"
+        run_1 = "run_ut_cache_1"
+        run_2 = "run_ut_cache_2"
+        _seed_atom_forge_queued(conn, wi_id, run_1)
+
+        fr = ForgeResult(ok=True, exit_code=0, stdout="ok", stderr="")
+        with patch(_PATCH, return_value=fr):
+            run_forge_queued_runs(orch)
+
+        row_1 = conn.execute("SELECT status, input_hash FROM runs WHERE id = ?", (run_1,)).fetchone()
+        self.assertEqual(row_1["status"], RunStatus.COMPLETED.value)
+        self.assertTrue((row_1["input_hash"] or "").strip())
+
+        acc = conn.execute("SELECT id FROM api_accounts LIMIT 1").fetchone()
+        conn.execute("UPDATE work_items SET status = ? WHERE id = ?", (WorkItemStatus.IN_PROGRESS.value, wi_id))
+        conn.execute(
+            """
+            INSERT INTO runs (id, work_item_id, agent_id, account_id, role, run_type, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'queued')
+            """,
+            (
+                run_2,
+                wi_id,
+                f"agent_{Role.FORGE.value}",
+                acc["id"],
+                Role.FORGE.value,
+                RunType.IMPLEMENT.value,
+            ),
+        )
+        conn.commit()
+
+        with patch(_PATCH, side_effect=AssertionError("LLM call must be skipped on cache hit")):
+            run_forge_queued_runs(orch)
+
+        row_2 = conn.execute("SELECT status, input_hash FROM runs WHERE id = ?", (run_2,)).fetchone()
+        self.assertEqual(row_2["status"], RunStatus.COMPLETED.value)
+        self.assertEqual(row_1["input_hash"], row_2["input_hash"])
+
+        steps_2 = conn.execute("SELECT COUNT(*) AS c FROM run_steps WHERE run_id = ?", (run_2,)).fetchone()["c"]
+        self.assertEqual(int(steps_2), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -270,6 +270,7 @@ CREATE TABLE IF NOT EXISTS runs (
     prompt_version  TEXT,
     model_name_snapshot TEXT,
     model_params_json TEXT,
+    retry_count     INTEGER NOT NULL DEFAULT 0,
     tokens_used     INTEGER DEFAULT 0,
     started_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now')),
     finished_at     TEXT
