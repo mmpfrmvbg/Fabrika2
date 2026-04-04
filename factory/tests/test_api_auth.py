@@ -1,4 +1,4 @@
-"""FACTORY_API_KEY: GET открыты, POST без ключа → 403 при установленном ключе."""
+"""FACTORY_API_KEY: все /api endpoints требуют ключ при включенной аутентификации."""
 
 from __future__ import annotations
 
@@ -26,6 +26,8 @@ class ApiKeyGateTests(unittest.TestCase):
             client = TestClient(app)
             r = client.get("/api/tree")
             self.assertEqual(r.status_code, 200)
+            health = client.get("/api/health")
+            self.assertEqual(health.status_code, 200)
             p = client.post("/api/visions", json={"title": "noauth", "description": ""})
             self.assertEqual(p.status_code, 200)
             self.assertTrue(p.json().get("ok"))
@@ -44,7 +46,7 @@ class ApiKeyGateTests(unittest.TestCase):
                 pass
             os.environ.pop("FACTORY_DB", None)
 
-    def test_with_key_post_requires_header(self) -> None:
+    def test_with_key_all_api_endpoints_require_header(self) -> None:
         prev = os.environ.get("FACTORY_API_KEY")
         prev_dry = os.environ.get("FACTORY_QWEN_DRY_RUN")
         db = Path(tempfile.mkstemp(prefix="factory_auth_", suffix=".db")[1])
@@ -54,13 +56,20 @@ class ApiKeyGateTests(unittest.TestCase):
             os.environ["FACTORY_DB"] = str(db)
             os.environ["FACTORY_API_KEY"] = "test123"
             client = TestClient(app)
+            root_health = client.get("/health")
+            self.assertEqual(root_health.status_code, 200)
+
             g = client.get("/api/tree")
-            self.assertEqual(g.status_code, 200)
+            self.assertEqual(g.status_code, 401)
             p = client.post(
                 "/api/visions",
                 json={"title": "x", "description": "y"},
             )
-            self.assertEqual(p.status_code, 403)
+            self.assertEqual(p.status_code, 401)
+            wrong = client.get("/api/tree", headers={"X-API-Key": "wrong"})
+            self.assertEqual(wrong.status_code, 401)
+            authed_get = client.get("/api/tree", headers={"X-API-Key": "test123"})
+            self.assertEqual(authed_get.status_code, 200)
             ok = client.post(
                 "/api/visions",
                 json={"title": "x", "description": "y"},
