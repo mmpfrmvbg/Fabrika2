@@ -7,6 +7,7 @@ from typing import Any
 
 from ..db import transaction
 from ..models import EventType
+from ..webhooks import notify_state_change
 
 
 def apply_rule(
@@ -103,6 +104,13 @@ def apply_rule(
                 run_id=run_id,
                 actor_role=actor_role,
             )
+
+        notify_state_change(
+            event_name=event_name,
+            work_item_id=wi_id,
+            title=wi["title"] if "title" in wi.keys() else None,
+            status=new_status,
+        )
 
         aname = rule.get("action_name") or ""
         if aname:

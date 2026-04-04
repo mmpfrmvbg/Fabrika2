@@ -32,6 +32,7 @@ from .logging import FactoryLogger
 from .models import EventType, Role, Severity
 from .queue_ops import claim_forge_inbox_atom, release_queue_lease
 from .worker_pipeline import drain_atom_downstream
+from .webhooks import notify_stuck
 
 _HEARTBEAT_INTERVAL_SEC = 30.0
 _STUCK_WORK_ITEM_TIMEOUT_SEC = WORKER_STUCK_TIMEOUT_SECONDS
@@ -115,6 +116,11 @@ def recover_stuck_running_work_items(
         """
     ).fetchall()
     for row in rows:
+        notify_stuck(
+            work_item_id=row["id"],
+            title=None,
+            status=row["status"],
+        )
         logger.log(
             EventType.WORK_ITEM_RECOVERED,
             "work_item",
