@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from factory import api_server
 from factory.api_server import app
 from factory.db import init_db
 
@@ -79,6 +80,7 @@ def api_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
     monkeypatch.setenv("FACTORY_DB", str(db_path))
     monkeypatch.setenv("FACTORY_QWEN_DRY_RUN", "1")
+    api_server._RATE_LIMIT_STATE.clear()
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -193,6 +195,9 @@ def test_api_health_returns_uptime_and_db_status(api_client: TestClient) -> None
     assert payload["db_connected"] is True
     assert isinstance(payload["uptime_seconds"], float)
     assert payload["uptime_seconds"] >= 0.0
+    assert "worker_status" in payload
+    assert "orchestrator_heartbeat" in payload
+    assert payload["version"]["api"] == app.version
 
 
 def test_api_metrics_returns_operational_stats(api_client: TestClient) -> None:
@@ -208,3 +213,22 @@ def test_api_metrics_returns_operational_stats(api_client: TestClient) -> None:
     assert isinstance(payload["avg_run_duration_seconds"], float)
     assert payload["avg_run_duration_seconds"] > 0.0
     assert payload["orchestrator_running"] is True
+
+
+def test_get_rate_limit_headers_present(api_client: TestClient) -> None:
+    response = api_client.get("/api/health")
+    assert response.status_code == 200
+    assert response.headers["X-RateLimit-Limit"] == "300"
+    assert int(response.headers["X-RateLimit-Remaining"]) >= 0
+
+
+def test_post_rate_limiting_returns_429(api_client: TestClient) -> None:
+    headers = {"x-forwarded-for": "203.0.113.10"}
+    for _ in range(60):
+        response = api_client.post("/api/visions", json={"title": "Rate Test"}, headers=headers)
+        assert response.status_code in (200, 201)
+    limited = api_client.post("/api/visions", json={"title": "Rate Test"}, headers=headers)
+    assert limited.status_code == 429
+    assert limited.headers.get("Retry-After") is not None
+    assert limited.headers["X-RateLimit-Limit"] == "60"
+    assert limited.headers["X-RateLimit-Remaining"] == "0"
