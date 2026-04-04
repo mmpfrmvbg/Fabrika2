@@ -23,6 +23,7 @@ import sys
 import threading
 import time
 import traceback
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -73,6 +74,10 @@ load_dotenv()
 _logger: FactoryLogger | None = None
 _LOG = logging.getLogger("factory.api_server")
 _API_STARTED_AT_MONOTONIC = time.monotonic()
+_RATE_LIMIT_WINDOW_SECONDS = 60
+_RATE_LIMITS_PER_MINUTE = {"GET": 300, "POST": 60}
+_RATE_LIMIT_LOCK = threading.Lock()
+_RATE_LIMIT_STATE: dict[tuple[str, str], dict[str, float | int]] = defaultdict(dict)
 
 
 class WorkItemPatchRequest(BaseModel):
@@ -340,11 +345,19 @@ def health() -> dict[str, str]:
 def api_health() -> dict[str, Any]:
     uptime_seconds = max(0.0, time.monotonic() - _API_STARTED_AT_MONOTONIC)
     db_connected = False
+    worker_status: dict[str, Any] = {"active": 0, "workers": [], "leases_total": 0}
+    orchestrator_heartbeat: dict[str, Any] = {
+        "orchestrator_last_event_time": None,
+        "orchestrator_seconds_since_last_event": None,
+        "orchestrator_heartbeat_state": "none",
+    }
     try:
         conn = _open_ro()
         try:
             conn.execute("SELECT 1").fetchone()
             db_connected = True
+            worker_status = workers_status_payload(conn)
+            orchestrator_heartbeat = _orchestrator_heartbeat_from_conn(conn)
         finally:
             conn.close()
     except HTTPException:
@@ -353,6 +366,9 @@ def api_health() -> dict[str, Any]:
         "status": "ok",
         "db_connected": db_connected,
         "uptime_seconds": uptime_seconds,
+        "worker_status": worker_status,
+        "orchestrator_heartbeat": orchestrator_heartbeat,
+        "version": {"api": app.version},
     }
 
 app.add_middleware(
@@ -388,6 +404,66 @@ async def request_timing_middleware(request: Request, call_next):
             "duration_ms": round(duration_ms, 2),
         },
     )
+    return response
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip() or "unknown"
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _rate_limit_meta(method: str, ip: str) -> dict[str, int]:
+    limit = _RATE_LIMITS_PER_MINUTE.get(method.upper())
+    if not limit:
+        return {"limit": 0, "remaining": 0, "retry_after": 0, "is_limited": 0}
+
+    key = (method.upper(), ip)
+    now = time.time()
+    with _RATE_LIMIT_LOCK:
+        state = _RATE_LIMIT_STATE.get(key) or {"window_start": now, "count": 0}
+        window_start = float(state.get("window_start", now))
+        count = int(state.get("count", 0))
+        elapsed = now - window_start
+        if elapsed >= _RATE_LIMIT_WINDOW_SECONDS:
+            window_start = now
+            count = 0
+            elapsed = 0
+        count += 1
+        _RATE_LIMIT_STATE[key] = {"window_start": window_start, "count": count}
+        remaining = max(0, limit - count)
+        retry_after = max(0, int(_RATE_LIMIT_WINDOW_SECONDS - elapsed))
+        is_limited = 1 if count > limit else 0
+    return {
+        "limit": limit,
+        "remaining": remaining,
+        "retry_after": retry_after,
+        "is_limited": is_limited,
+    }
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    ip = _client_ip(request)
+    meta = _rate_limit_meta(request.method, ip)
+    if meta["is_limited"]:
+        response = JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded"},
+        )
+        response.headers["Retry-After"] = str(meta["retry_after"])
+    else:
+        response = await call_next(request)
+
+    if meta["limit"] > 0:
+        response.headers["X-RateLimit-Limit"] = str(meta["limit"])
+        response.headers["X-RateLimit-Remaining"] = str(meta["remaining"])
+    else:
+        response.headers["X-RateLimit-Limit"] = "unlimited"
+        response.headers["X-RateLimit-Remaining"] = "unlimited"
     return response
 
 
