@@ -15,8 +15,10 @@ from .config import ACCOUNTS, DB_PATH
 from .models import Role
 from .schema_ddl import DDL, V_API_USAGE_TODAY_RECREATE
 
-# Последняя миграция: 1=базовый DDL, 2=improvement_candidates, 3=file_changes.intent_override, 4=fsm creator_cancelled/archive_sweep, 5=judge_rejected release locks, 6=cleanup stale locks
-_SCHEMA_VERSION = 9
+# Последняя миграция: 1=базовый DDL, 2=improvement_candidates, 3=file_changes.intent_override,
+# 4=fsm creator_cancelled/archive_sweep, 5=judge_rejected release locks, 6=cleanup stale locks,
+# 7=forensic_tracing_fields, 8=runs_retry_count, 9=runs_source_run_id_dry_run, 10=work_items heartbeat
+_SCHEMA_VERSION = 10
 _SQLITE_TIMEOUT_SEC = 30.0
 _SQLITE_BUSY_TIMEOUT_MS = 30000
 
@@ -281,6 +283,13 @@ def _migration_runs_source_and_dry_run(conn: sqlite3.Connection) -> None:
             pass
 
 
+def _migration_work_items_last_heartbeat(conn: sqlite3.Connection) -> None:
+    try:
+        conn.execute("ALTER TABLE work_items ADD COLUMN last_heartbeat_at TIMESTAMP")
+    except sqlite3.OperationalError:
+        pass
+
+
 @contextmanager
 def _advisory_file_lock(path: Path, *, timeout_sec: float = 60.0, poll_sec: float = 0.05):
     """
@@ -437,6 +446,13 @@ def ensure_schema(db_path: Path = DB_PATH) -> None:
                 _migration_runs_source_and_dry_run(conn)
                 conn.execute(
                     "INSERT OR IGNORE INTO migrations(version, name) VALUES (9, 'runs_source_run_id_dry_run')"
+                )
+                mv = _max_migration_version(conn)
+
+            if mv < 10:
+                _migration_work_items_last_heartbeat(conn)
+                conn.execute(
+                    "INSERT OR IGNORE INTO migrations(version, name) VALUES (10, 'work_items_last_heartbeat_at')"
                 )
 
             conn.commit()

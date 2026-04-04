@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS work_items (
     estimated_complexity  TEXT,          -- simple / medium / complex
     tags                  TEXT,          -- JSON-массив тегов
     metadata              TEXT,          -- JSON произвольный
+    last_heartbeat_at     TIMESTAMP,
     created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now')),
     updated_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now'))
 );
