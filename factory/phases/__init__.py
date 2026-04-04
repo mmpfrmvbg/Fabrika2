@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 from . import (
     phase_architect,
     phase_decompose,
@@ -19,6 +21,17 @@ PHASE_REGISTRY = {
     "review": phase_review.handle,
     "judge": phase_judge.handle,
 }
+__all__ = [
+    "PHASE_REGISTRY",
+    "resolve_phase",
+    "resolve_handler",
+    "phase_decompose",
+    "phase_architect",
+    "phase_planner",
+    "phase_forge",
+    "phase_review",
+    "phase_judge",
+]
 
 
 def resolve_phase(event_name: str) -> str:
@@ -54,6 +67,6 @@ def resolve_phase(event_name: str) -> str:
     return "judge"
 
 
-def resolve_handler(event_name: str):
+def resolve_handler(event_name: str) -> Callable[..., tuple[bool, str]]:
     """Return phase handler for the event."""
     return PHASE_REGISTRY[resolve_phase(event_name)]

@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from ..logging import FactoryLogger
 
 
-def lease_queue_row(conn, wi_id: str, role: Role) -> str:
+def lease_queue_row(conn: Any, wi_id: str, role: Role) -> str:
     agent_id = f"agent_{role.value}"
     lease_until = (
         datetime.now(timezone.utc) + timedelta(minutes=30)
@@ -37,7 +37,7 @@ def lease_queue_row(conn, wi_id: str, role: Role) -> str:
 
 
 def insert_run(
-    conn,
+    conn: Any,
     *,
     run_id: str,
     wi_id: str,
@@ -84,7 +84,7 @@ def insert_run(
 
 
 def finish_run(
-    conn,
+    conn: Any,
     run_id: str,
     *,
     ok: bool,
@@ -146,11 +146,11 @@ def finish_run(
 
 
 def insert_run_step(
-    conn,
+    conn: Any,
     run_id: str,
     step_no: int,
     step_kind: str,
-    payload_obj: dict,
+    payload_obj: dict[str, Any],
     summary: str | None = None,
     agent_version: str | None = None,
 ) -> None:

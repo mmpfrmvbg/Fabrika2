@@ -1,7 +1,10 @@
 """Actions — побочные эффекты переходов FSM (Фаза 1)."""
 
+from __future__ import annotations
+
 import sqlite3
 from datetime import datetime, timedelta, timezone
+from typing import Any, Callable
 
 from .config import AccountManager
 from .db import gen_id, payload_hash, stable_json_dumps
@@ -15,28 +18,28 @@ class Actions:
         conn: sqlite3.Connection,
         logger: FactoryLogger,
         account_manager: AccountManager,
-    ):
+    ) -> None:
         self.conn = conn
         self.logger = logger
         self.account_manager = account_manager
 
-    def action_notify_planner(self, wi_id: str, **ctx):
+    def action_notify_planner(self, wi_id: str, **ctx: Any) -> None:
         self._enqueue(wi_id, QueueName.PLANNER_INBOX)
 
-    def action_notify_judge(self, wi_id: str, **ctx):
+    def action_notify_judge(self, wi_id: str, **ctx: Any) -> None:
         self._enqueue(wi_id, QueueName.JUDGE_INBOX)
 
-    def action_notify_architect(self, wi_id: str, **ctx):
+    def action_notify_architect(self, wi_id: str, **ctx: Any) -> None:
         """Очередь architect_inbox (дети после planner_decomposed; не путать с st_02)."""
         self._enqueue(wi_id, QueueName.ARCHITECT_INBOX)
 
-    def action_enqueue_forge(self, wi_id: str, **ctx):
+    def action_enqueue_forge(self, wi_id: str, **ctx: Any) -> None:
         self._enqueue(wi_id, QueueName.FORGE_INBOX)
 
-    def action_enqueue_reviewer(self, wi_id: str, **ctx):
+    def action_enqueue_reviewer(self, wi_id: str, **ctx: Any) -> None:
         self._enqueue(wi_id, QueueName.REVIEW_INBOX)
 
-    def action_return_to_author(self, wi_id: str, **ctx):
+    def action_return_to_author(self, wi_id: str, **ctx: Any) -> None:
         wi = self.conn.execute(
             "SELECT creator_role FROM work_items WHERE id = ?",
             (wi_id,),
@@ -49,7 +52,7 @@ class Actions:
         queue = queue_map.get(wi["creator_role"], QueueName.PLANNER_INBOX)
         self._enqueue(wi_id, queue)
 
-    def action_start_forge_run(self, wi_id: str, **ctx):
+    def action_start_forge_run(self, wi_id: str, **ctx: Any) -> None:
         """
         Блокировки + INSERT run (``queued``) + lease в той же транзакции, что и переход FSM.
 
@@ -132,7 +135,7 @@ class Actions:
             tags=["dispatch", "forge"],
         )
 
-    def action_acquire_file_locks(self, wi_id: str, **ctx):
+    def action_acquire_file_locks(self, wi_id: str, **ctx: Any) -> None:
         run_id = ctx.get("run_id")
         files = self.conn.execute(
             """
@@ -162,7 +165,7 @@ class Actions:
             payload={"paths": [f["path"] for f in files], "step": "file_lock"},
         )
 
-    def action_release_file_locks(self, wi_id: str, **ctx):
+    def action_release_file_locks(self, wi_id: str, **ctx: Any) -> None:
         self.conn.execute(
             """
             UPDATE file_locks SET released_at = strftime('%Y-%m-%dT%H:%M:%f','now')
@@ -171,21 +174,21 @@ class Actions:
             (wi_id,),
         )
 
-    def action_increment_retry(self, wi_id: str, **ctx):
+    def action_increment_retry(self, wi_id: str, **ctx: Any) -> None:
         self.conn.execute(
             "UPDATE work_items SET retry_count = retry_count + 1 WHERE id = ?",
             (wi_id,),
         )
         self._enqueue(wi_id, QueueName.FORGE_INBOX)
 
-    def action_escalate_to_judge(self, wi_id: str, **ctx):
+    def action_escalate_to_judge(self, wi_id: str, **ctx: Any) -> None:
         self.conn.execute(
             "UPDATE work_items SET needs_human_review = 1 WHERE id = ?",
             (wi_id,),
         )
         self._enqueue(wi_id, QueueName.JUDGE_INBOX)
 
-    def action_commit_to_git(self, wi_id: str, **ctx):
+    def action_commit_to_git(self, wi_id: str, **ctx: Any) -> None:
         self.action_release_file_locks(wi_id, **ctx)
         # Завершённые атомы не должны оставаться в work_item_queue (иначе будут висеть в depth KPI).
         self.conn.execute(
@@ -229,7 +232,7 @@ class Actions:
                     (pid, QueueName.COMPLETION_INBOX.value),
                 )
 
-    def action_propagate_completion(self, wi_id: str, **ctx):
+    def action_propagate_completion(self, wi_id: str, **ctx: Any) -> None:
         """
         Roll-up completion recursively via completion_inbox.
 
@@ -283,7 +286,7 @@ class Actions:
             payload={"sub": "rollup_propagate_completion", "parent_id": parent_id},
         )
 
-    def action_create_review_comment(self, wi_id: str, **ctx):
+    def action_create_review_comment(self, wi_id: str, **ctx: Any) -> None:
         run_id = ctx.get("run_id")
         if run_id:
             checks = self.conn.execute(
@@ -307,10 +310,10 @@ class Actions:
             (gen_id("cmt"), wi_id, body),
         )
 
-    def action_build_judge_context(self, wi_id: str, **ctx):
+    def action_build_judge_context(self, wi_id: str, **ctx: Any) -> None:
         self._enqueue(wi_id, QueueName.JUDGE_INBOX)
 
-    def action_creator_cancelled_cleanup(self, wi_id: str, **ctx):
+    def action_creator_cancelled_cleanup(self, wi_id: str, **ctx: Any) -> None:
         """После creator_cancelled: снять блокировки файлов и убрать из очередей."""
         self.action_release_file_locks(wi_id, **ctx)
         self.conn.execute(
@@ -318,14 +321,14 @@ class Actions:
             (wi_id,),
         )
 
-    def action_archive_finalize(self, wi_id: str, **ctx):
+    def action_archive_finalize(self, wi_id: str, **ctx: Any) -> None:
         """После archive_sweep: очередь не нужна для архива."""
         self.conn.execute(
             "DELETE FROM work_item_queue WHERE work_item_id = ?",
             (wi_id,),
         )
 
-    def action_cancel_children(self, wi_id: str, **ctx):
+    def action_cancel_children(self, wi_id: str, **ctx: Any) -> None:
         children = self.conn.execute(
             "SELECT id FROM work_items WHERE parent_id = ? AND status != 'cancelled'",
             (wi_id,),
@@ -344,7 +347,7 @@ class Actions:
                 payload={"cascade_cancel": True, "parent_id": wi_id},
             )
 
-    def action_log_block_reason(self, wi_id: str, **ctx):
+    def action_log_block_reason(self, wi_id: str, **ctx: Any) -> None:
         reason = ctx.get("reason", "Зависимость не удовлетворена")
         self.logger.log(
             EventType.TASK_STATUS_CHANGED,
@@ -356,7 +359,7 @@ class Actions:
             payload={"blocked": True},
         )
 
-    def _enqueue(self, wi_id: str, queue: QueueName):
+    def _enqueue(self, wi_id: str, queue: QueueName) -> None:
         self.conn.execute(
             """
             INSERT INTO work_item_queue (work_item_id, queue_name)
@@ -378,14 +381,14 @@ class Actions:
             tags=["queue", queue.value],
         )
 
-    def resolve(self, action_name: str):
+    def resolve(self, action_name: str) -> Callable[..., None]:
         if not action_name:
             return lambda *a, **k: None
         # Support composite actions separated by ";"
         parts = [p.strip() for p in action_name.split(";") if p.strip()]
         if len(parts) > 1:
             fns = [self.resolve(p) for p in parts]
-            def _composite(wi_id: str, **ctx):
+            def _composite(wi_id: str, **ctx: Any) -> None:
                 for f in fns:
                     f(wi_id, **ctx)
             return _composite

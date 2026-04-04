@@ -1,7 +1,7 @@
 """FSM: find_matching_transition, apply_transition (Фаза 1)."""
 import json
 import sqlite3
-from typing import Optional
+from typing import Any, Optional
 
 from .actions import Actions
 from .guards import Guards
@@ -19,27 +19,27 @@ class StateMachine:
         guards: Guards,
         actions: Actions,
         logger: FactoryLogger,
-    ):
+    ) -> None:
         self.conn = conn
         self.guards = guards
         self.actions = actions
         self.logger = logger
-        self._transitions: list[dict] = self._load_transitions()
+        self._transitions: list[dict[str, Any]] = self._load_transitions()
 
-    def _load_transitions(self) -> list[dict]:
+    def _load_transitions(self) -> list[dict[str, Any]]:
         rows = self.conn.execute("SELECT * FROM state_transitions").fetchall()
         return [dict(r) for r in rows]
 
-    def reload(self):
+    def reload(self) -> None:
         self._transitions = self._load_transitions()
 
     @staticmethod
-    def _norm_guard(g) -> str:
+    def _norm_guard(g: str | None) -> str:
         return (g or "").strip()
 
     def find_matching_transition(
         self, wi: sqlite3.Row | dict, event_name: str
-    ) -> Optional[dict]:
+    ) -> Optional[dict[str, Any]]:
         wid = wi["id"]
         w = dict(wi) if not isinstance(wi, dict) else wi
         candidates = []
@@ -61,8 +61,16 @@ class StateMachine:
                     )
                     if w["kind"] not in allowed:
                         continue
-                except (json.JSONDecodeError, TypeError):
-                    pass
+                except (json.JSONDecodeError, TypeError) as e:
+                    self.logger.log(
+                        EventType.TASK_STATUS_CHANGED,
+                        "work_item",
+                        wid,
+                        f"Invalid applicable_kinds for rule {rule.get('id', 'unknown')}: {e}",
+                        severity=Severity.DEBUG,
+                        work_item_id=wid,
+                        payload={"rule_id": rule.get("id"), "applicable_kinds": kinds_json},
+                    )
             candidates.append(rule)
 
         candidates.sort(
@@ -114,10 +122,10 @@ class StateMachine:
         wi_id: str,
         event_name: str,
         *,
-        actor_role: str = None,
-        actor_id: str = None,
-        run_id: str = None,
-        extra_context: dict = None,
+        actor_role: str | None = None,
+        actor_id: str | None = None,
+        run_id: str | None = None,
+        extra_context: dict[str, Any] | None = None,
     ) -> tuple[bool, str]:
         wi = self.conn.execute(
             "SELECT * FROM work_items WHERE id = ?", (wi_id,)
@@ -157,7 +165,7 @@ class StateMachine:
 
 def find_matching_transition(
     sm: StateMachine, wi: sqlite3.Row | dict, event_name: str
-):
+) -> Optional[dict[str, Any]]:
     """Канонический API Фазы 2: делегирует в `StateMachine.find_matching_transition`."""
     return sm.find_matching_transition(wi, event_name)
 
@@ -167,10 +175,10 @@ def apply_transition(
     wi_id: str,
     event_name: str,
     *,
-    actor_role: str = None,
-    actor_id: str = None,
-    run_id: str = None,
-    extra_context: dict = None,
+    actor_role: str | None = None,
+    actor_id: str | None = None,
+    run_id: str | None = None,
+    extra_context: dict[str, Any] | None = None,
 ) -> tuple[bool, str]:
     """Канонический API Фазы 2: делегирует в `StateMachine.apply_transition`."""
     return sm.apply_transition(

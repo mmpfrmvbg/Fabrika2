@@ -1,13 +1,16 @@
 """Журналирование в таблицу event_log + дублирование в stdlib logging."""
+from __future__ import annotations
+
 import json
 import logging
 import sqlite3
+from typing import Any
 
 from .models import EventType, Severity
 from .task_context import resolve_task_context
 
 
-def _coerce_payload_dict(payload: dict | None) -> dict:
+def _coerce_payload_dict(payload: dict[str, Any] | str | Any | None) -> dict[str, Any]:
     """payload в event_log всегда JSON-объект."""
     if payload is None:
         return {}
@@ -19,7 +22,7 @@ def _coerce_payload_dict(payload: dict | None) -> dict:
 
 
 class FactoryLogger:
-    def __init__(self, conn: sqlite3.Connection):
+    def __init__(self, conn: sqlite3.Connection | None) -> None:
         self.conn = conn
         self._py_logger = logging.getLogger("factory")
 
@@ -31,16 +34,16 @@ class FactoryLogger:
         message: str,
         *,
         severity: Severity = Severity.INFO,
-        run_id: str = None,
-        work_item_id: str = None,
-        actor_role: str = None,
-        actor_id: str = None,
-        account_id: str = None,
+        run_id: str | None = None,
+        work_item_id: str | None = None,
+        actor_role: str | None = None,
+        actor_id: str | None = None,
+        account_id: str | None = None,
         caused_by_type: str | None = None,
         caused_by_id: str | None = None,
-        parent_event_id: int = None,
-        payload: dict = None,
-        tags: list = None,
+        parent_event_id: int | None = None,
+        payload: dict[str, Any] | str | Any | None = None,
+        tags: list[str] | None = None,
     ) -> int:
         ctx: dict = {}
         if work_item_id:
