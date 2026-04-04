@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import cast
 
 import pytest
 
 from factory.fsm import StateMachine
 from factory.guards import Guards
+from factory.logging import FactoryLogger
+from factory.actions import Actions
 
 
 class _DummyActions:
@@ -80,7 +83,12 @@ def test_can_transition_with_valid_guard() -> None:
         ("t-1", "work_item", "draft", "forge_inbox", "ready_for_work", "guard_has_files_declared", '["atom"]'),
     )
 
-    sm = StateMachine(conn, Guards(conn), _DummyActions(), _DummyLogger())
+    sm = StateMachine(
+        conn,
+        Guards(conn),
+        cast(Actions, _DummyActions()),
+        cast(FactoryLogger, _DummyLogger()),
+    )
     ok, to_state = sm.can_transition("wi-1", "forge_inbox")
 
     assert ok is True
@@ -98,7 +106,12 @@ def test_can_transition_guard_blocks_rule() -> None:
         ("t-2", "work_item", "draft", "forge_inbox", "ready_for_work", "guard_has_files_declared", '["atom"]'),
     )
 
-    sm = StateMachine(conn, Guards(conn), _DummyActions(), _DummyLogger())
+    sm = StateMachine(
+        conn,
+        Guards(conn),
+        cast(Actions, _DummyActions()),
+        cast(FactoryLogger, _DummyLogger()),
+    )
     ok, message = sm.can_transition("wi-2", "forge_inbox")
 
     assert ok is False
@@ -116,7 +129,12 @@ def test_invalid_transition_guard_raises_error() -> None:
         ("t-3", "work_item", "draft", "bad_event", "ready_for_work", "guard_does_not_exist", '["atom"]'),
     )
 
-    sm = StateMachine(conn, Guards(conn), _DummyActions(), _DummyLogger())
+    sm = StateMachine(
+        conn,
+        Guards(conn),
+        cast(Actions, _DummyActions()),
+        cast(FactoryLogger, _DummyLogger()),
+    )
 
     with pytest.raises(ValueError, match="Неизвестный guard"):
         sm.can_transition("wi-3", "bad_event")

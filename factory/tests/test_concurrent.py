@@ -18,13 +18,13 @@ from factory.models import EventType
 class TestConcurrentSchemaAndWrites(unittest.TestCase):
     def test_concurrent_ensure_schema(self) -> None:
         """Несколько потоков вызывают ensure_schema одновременно — без ошибок."""
-        db_path = os.path.join(tempfile.mkdtemp(), "test_conc.db")
+        db_path = Path(tempfile.mkdtemp()) / "test_conc.db"
         errors: list[BaseException] = []
 
         def worker() -> None:
             try:
                 ensure_schema(db_path)
-                conn = get_connection(db_path)
+                conn = get_connection(str(db_path))
                 tables = [
                     r[0]
                     for r in conn.execute(
@@ -47,13 +47,13 @@ class TestConcurrentSchemaAndWrites(unittest.TestCase):
 
     def test_concurrent_event_log_writes(self) -> None:
         """Несколько потоков пишут в event_log — без database is locked."""
-        db_path = os.path.join(tempfile.mkdtemp(), "test_writes.db")
+        db_path = Path(tempfile.mkdtemp()) / "test_writes.db"
         ensure_schema(db_path)
         errors: list[BaseException] = []
 
         def writer(thread_id: int) -> None:
             try:
-                conn = get_connection(db_path)
+                conn = get_connection(str(db_path))
                 for i in range(20):
                     conn.execute(
                         """
@@ -82,7 +82,7 @@ class TestConcurrentSchemaAndWrites(unittest.TestCase):
 
         self.assertEqual(errors, [], f"errors: {errors!r}")
 
-        conn = get_connection(db_path)
+        conn = get_connection(str(db_path))
         count = conn.execute(
             "SELECT COUNT(*) FROM event_log WHERE event_type='test.write'"
         ).fetchone()[0]
@@ -91,10 +91,10 @@ class TestConcurrentSchemaAndWrites(unittest.TestCase):
 
     def test_restart_new_connection_while_old_writes(self) -> None:
         """Новое соединение при активной транзакции в другом — чтение не падает (WAL)."""
-        db_path = os.path.join(tempfile.mkdtemp(), "test_restart.db")
+        db_path = Path(tempfile.mkdtemp()) / "test_restart.db"
         ensure_schema(db_path)
 
-        conn1 = get_connection(db_path)
+        conn1 = get_connection(str(db_path))
         conn1.execute("BEGIN IMMEDIATE")
         conn1.execute(
             """
@@ -107,7 +107,7 @@ class TestConcurrentSchemaAndWrites(unittest.TestCase):
             (datetime.now(timezone.utc).isoformat(),),
         )
 
-        conn2 = get_connection(db_path)
+        conn2 = get_connection(str(db_path))
         rows = conn2.execute("SELECT COUNT(*) AS c FROM event_log").fetchone()["c"]
         self.assertIsNotNone(rows)
 

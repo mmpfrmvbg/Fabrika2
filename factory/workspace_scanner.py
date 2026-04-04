@@ -177,10 +177,10 @@ def scan_workspace(
                 continue
             full = Path(dirpath) / fn
             try:
-                rel = full.relative_to(root_path)
+                rel_path = full.relative_to(root_path)
             except ValueError:
                 continue
-            rel_paths.append(str(rel).replace("\\", "/"))
+            rel_paths.append(str(rel_path).replace("\\", "/"))
 
     rel_paths.sort()
     truncated = 0

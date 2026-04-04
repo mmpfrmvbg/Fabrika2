@@ -45,6 +45,15 @@ class FactoryLogger:
         payload: dict[str, Any] | str | Any | None = None,
         tags: list[str] | None = None,
     ) -> int:
+        if self.conn is None:
+            sev = severity.value
+            if sev == "warn":
+                log_fn = self._py_logger.warning
+            else:
+                log_fn = getattr(self._py_logger, sev, self._py_logger.info)
+            log_fn(f"[{event_type.value}] {entity_type}:{entity_id} — {message}")
+            return 0
+
         ctx: dict = {}
         if work_item_id:
             ctx = resolve_task_context(self.conn, work_item_id)
@@ -91,4 +100,4 @@ class FactoryLogger:
             log_fn = getattr(self._py_logger, sev, self._py_logger.info)
         log_fn(f"[{event_type.value}] {entity_type}:{entity_id} — {message}")
 
-        return event_id
+        return int(event_id or 0)

@@ -107,11 +107,11 @@ def main(argv: list[str] | None = None) -> None:
     if "--plan" in rest:
         from .planner import run_plan_command
 
-        vid = _flag_value(rest, "--vision-id")
-        if not vid:
+        vision_id = _flag_value(rest, "--vision-id")
+        if not vision_id:
             _LOG.error("Ошибка: укажите --vision-id <id>")
             sys.exit(2)
-        rc = run_plan_command(db, vid.strip())
+        rc = run_plan_command(db, vision_id.strip())
         sys.exit(rc)
 
     if "--e2e-planner" in rest:
@@ -174,18 +174,18 @@ def main(argv: list[str] | None = None) -> None:
     if "--mark-atom-ready-for-forge" in rest:
         from .forge_next_atom import mark_atom_ready_for_forge
 
-        aid = _flag_value(rest, "--atom-id")
-        if not aid:
+        atom_id = _flag_value(rest, "--atom-id")
+        if not atom_id:
             _LOG.error("Ошибка: укажите --atom-id <id>")
             sys.exit(2)
         f = wire(db)
         mark_atom_ready_for_forge(
             f["conn"],
             f["sm"],
-            aid.strip(),
+            atom_id.strip(),
             orchestrator=f["orchestrator"],
         )
-        _LOG.info("Atom %s: ready_for_work + forge_inbox (FSM + judge run)", aid.strip())
+        _LOG.info("Atom %s: ready_for_work + forge_inbox (FSM + judge run)", atom_id.strip())
         return
 
     if "--run-next-atom" in rest:

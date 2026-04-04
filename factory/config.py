@@ -398,13 +398,13 @@ class AccountManager:
     def record_usage(
         self,
         account_id: str,
-        run_id: str = None,
+        run_id: str | None = None,
         tokens_in: int = 0,
         tokens_out: int = 0,
-        model_name: str = None,
-        latency_ms: int = None,
-        error: str = None,
-    ):
+        model_name: str | None = None,
+        latency_ms: int | None = None,
+        error: str | None = None,
+    ) -> None:
         now = datetime.now(timezone.utc).isoformat()
         self.conn.execute(
             """

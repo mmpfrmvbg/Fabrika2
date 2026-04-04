@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from factory.composition import wire
 from factory.models import QueueName
@@ -86,14 +87,14 @@ def test_start_idle_loop_calls_tick_and_sleeps(monkeypatch, tmp_path: Path) -> N
     orch = f["orchestrator"]
     conn = f["conn"]
     try:
-        calls = {"tick": 0, "sleep": []}
+        calls: dict[str, int | list[float]] = {"tick": 0, "sleep": []}
 
         def _tick_once() -> None:
-            calls["tick"] += 1
+            calls["tick"] = cast(int, calls["tick"]) + 1
             orch._running = False
 
         def _sleep(seconds: float) -> None:
-            calls["sleep"].append(seconds)
+            cast(list[float], calls["sleep"]).append(seconds)
 
         monkeypatch.setattr(orch, "tick", _tick_once)
         monkeypatch.setattr("factory.orchestrator_core.time.sleep", _sleep)
@@ -101,7 +102,8 @@ def test_start_idle_loop_calls_tick_and_sleeps(monkeypatch, tmp_path: Path) -> N
         orch.start()
 
         assert calls["tick"] == 1
-        assert len(calls["sleep"]) == 1
-        assert calls["sleep"][0] > 0
+        sleeps = cast(list[float], calls["sleep"])
+        assert len(sleeps) == 1
+        assert sleeps[0] > 0
     finally:
         conn.close()
