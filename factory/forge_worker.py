@@ -55,6 +55,17 @@ def _log_forge_run_result(
     )
 
 
+def _is_idempotent_forge_completed_denial(
+    conn: sqlite3.Connection,
+    work_item_id: str,
+    msg: str,
+) -> bool:
+    if "from done" not in (msg or "").lower():
+        return False
+    row = conn.execute("SELECT status FROM work_items WHERE id = ?", (work_item_id,)).fetchone()
+    return bool(row and row["status"] == "done")
+
+
 def execute_forge_run(
     conn: sqlite3.Connection,
     run_id: str,
@@ -148,6 +159,25 @@ def execute_forge_run(
             run_id=run_id,
         )
         if not ok_t:
+            if _is_idempotent_forge_completed_denial(conn, work_item_id, msg_t):
+                logger.log(
+                    EventType.FORGE_STEP,
+                    "work_item",
+                    work_item_id,
+                    "forge_completed skipped: work item already done",
+                    work_item_id=work_item_id,
+                    run_id=run_id,
+                    payload={"sub": "forge_completed_already_done", "msg": msg_t},
+                    tags=["forge", "idempotent"],
+                )
+                _log_forge_run_result(
+                    logger,
+                    work_item_id,
+                    run_id,
+                    success=True,
+                    reason="forge_completed skipped: already done",
+                )
+                return
             _log_forge_run_result(
                 logger,
                 work_item_id,
@@ -368,6 +398,25 @@ def execute_forge_run(
                 run_id=run_id,
             )
             if not ok_t:
+                if _is_idempotent_forge_completed_denial(conn, work_item_id, msg_t):
+                    logger.log(
+                        EventType.FORGE_STEP,
+                        "work_item",
+                        work_item_id,
+                        "forge_completed skipped: work item already done",
+                        work_item_id=work_item_id,
+                        run_id=run_id,
+                        payload={"sub": "forge_completed_already_done", "msg": msg_t},
+                        tags=["forge", "idempotent"],
+                    )
+                    _log_forge_run_result(
+                        logger,
+                        work_item_id,
+                        run_id,
+                        success=True,
+                        reason="forge_completed skipped: already done",
+                    )
+                    return
                 logger.log(
                     EventType.FORGE_FAILED,
                     "work_item",
