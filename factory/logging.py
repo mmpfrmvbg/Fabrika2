@@ -36,6 +36,8 @@ class FactoryLogger:
         actor_role: str = None,
         actor_id: str = None,
         account_id: str = None,
+        caused_by_type: str | None = None,
+        caused_by_id: str | None = None,
         parent_event_id: int = None,
         payload: dict = None,
         tags: list = None,
@@ -56,8 +58,8 @@ class FactoryLogger:
             INSERT INTO event_log
                 (event_type, entity_type, entity_id, severity, message,
                  run_id, work_item_id, actor_role, actor_id, account_id,
-                 parent_event_id, payload, tags)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 caused_by_type, caused_by_id, parent_event_id, payload, tags)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event_type.value,
@@ -70,6 +72,8 @@ class FactoryLogger:
                 actor_role,
                 actor_id,
                 account_id,
+                caused_by_type,
+                caused_by_id,
                 parent_event_id,
                 json.dumps(merged_payload, ensure_ascii=False),
                 json.dumps(tags, ensure_ascii=False) if tags else None,

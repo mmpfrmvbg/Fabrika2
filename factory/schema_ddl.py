@@ -264,7 +264,12 @@ CREATE TABLE IF NOT EXISTS runs (
     commit_sha      TEXT,
     error_summary   TEXT,
     input_payload   TEXT,               -- JSON: что получил агент на вход
+    input_hash      TEXT,
     output_payload  TEXT,               -- JSON: что агент вернул
+    agent_version   TEXT,
+    prompt_version  TEXT,
+    model_name_snapshot TEXT,
+    model_params_json TEXT,
     tokens_used     INTEGER DEFAULT 0,
     started_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now')),
     finished_at     TEXT
@@ -274,6 +279,7 @@ CREATE INDEX IF NOT EXISTS idx_runs_wi     ON runs(work_item_id);
 CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 CREATE INDEX IF NOT EXISTS idx_runs_agent  ON runs(agent_id);
 CREATE INDEX IF NOT EXISTS idx_runs_corr   ON runs(correlation_id);
+CREATE INDEX IF NOT EXISTS idx_runs_input_hash ON runs(input_hash);
 
 
 -- ───────────────────────────────────────────────────
@@ -340,12 +346,15 @@ CREATE TABLE IF NOT EXISTS run_steps (
     status      TEXT NOT NULL DEFAULT 'started',
     summary     TEXT,                   -- краткое описание для UI
     payload     TEXT NOT NULL,          -- JSON полный
+    input_hash  TEXT,
+    agent_version TEXT,
     duration_ms INTEGER,
     created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%f','now')),
     UNIQUE(run_id, step_no)
 );
 
 CREATE INDEX IF NOT EXISTS idx_rs_run ON run_steps(run_id);
+CREATE INDEX IF NOT EXISTS idx_rs_input_hash ON run_steps(input_hash);
 
 
 -- ───────────────────────────────────────────────────
@@ -460,6 +469,8 @@ CREATE TABLE IF NOT EXISTS event_log (
     actor_role      TEXT,
     actor_id        TEXT,
     account_id      TEXT REFERENCES api_accounts(id),
+    caused_by_type  TEXT,
+    caused_by_id    TEXT,
     severity        TEXT NOT NULL DEFAULT 'info',
     message         TEXT NOT NULL,
     payload         TEXT,               -- JSON
@@ -473,6 +484,7 @@ CREATE INDEX IF NOT EXISTS idx_el_time      ON event_log(event_time);
 CREATE INDEX IF NOT EXISTS idx_el_type      ON event_log(event_type);
 CREATE INDEX IF NOT EXISTS idx_el_severity  ON event_log(severity) WHERE severity IN ('warn','error','fatal');
 CREATE INDEX IF NOT EXISTS idx_el_account   ON event_log(account_id);
+CREATE INDEX IF NOT EXISTS idx_el_caused_by ON event_log(caused_by_type, caused_by_id);
 
 
 -- ───────────────────────────────────────────────────

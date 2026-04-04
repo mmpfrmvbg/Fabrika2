@@ -385,6 +385,13 @@ def run_planner(orchestrator: Orchestrator, item: dict) -> None:
         role=Role.PLANNER,
         run_type=RunType.PLAN,
         account_id=account["account_id"],
+        input_payload={
+            "work_item_id": wi_id,
+            "kind": wi["kind"],
+            "title": wi["title"],
+            "description": wi["description"],
+            "planning_depth": wi["planning_depth"],
+        },
     )
 
     logger.log(
@@ -394,6 +401,8 @@ def run_planner(orchestrator: Orchestrator, item: dict) -> None:
         "Run started (planner)",
         work_item_id=wi_id,
         run_id=run_id,
+        caused_by_type="run",
+        caused_by_id=run_id,
         actor_role=Role.PLANNER.value,
         account_id=account["account_id"],
         tags=["planner", "phase2"],

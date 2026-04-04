@@ -4,7 +4,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 
 from .config import AccountManager
-from .db import gen_id
+from .db import gen_id, payload_hash, stable_json_dumps
 from .logging import FactoryLogger
 from .models import EventType, QueueName, Role, RunType, Severity
 
@@ -62,12 +62,28 @@ class Actions:
 
         account = self.account_manager.get_active_account()
         agent_id = f"agent_{Role.FORGE.value}"
+        agent_version = "unknown"
+        agent_cfg = self.conn.execute(
+            "SELECT model_name, prompt_version, config_json FROM agents WHERE id = ?",
+            (agent_id,),
+        ).fetchone()
+        model_name_snapshot = agent_cfg["model_name"] if agent_cfg else None
+        prompt_version = agent_cfg["prompt_version"] if agent_cfg else None
+        model_params_json = agent_cfg["config_json"] if agent_cfg else None
+        input_payload = {
+            "work_item_id": wi_id,
+            "run_type": RunType.IMPLEMENT.value,
+            "trigger": "action_start_forge_run",
+        }
 
         # Сначала runs: file_locks.run_id REFERENCES runs(id) при включённых FK
         self.conn.execute(
             """
-            INSERT INTO runs (id, work_item_id, agent_id, account_id, role, run_type, status)
-            VALUES (?, ?, ?, ?, ?, ?, 'queued')
+            INSERT INTO runs (
+                id, work_item_id, agent_id, account_id, role, run_type, status,
+                input_payload, input_hash, agent_version, prompt_version, model_name_snapshot, model_params_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -76,6 +92,12 @@ class Actions:
                 account["account_id"],
                 Role.FORGE.value,
                 RunType.IMPLEMENT.value,
+                stable_json_dumps(input_payload),
+                payload_hash(input_payload),
+                agent_version,
+                prompt_version,
+                model_name_snapshot,
+                model_params_json,
             ),
         )
 
@@ -97,6 +119,8 @@ class Actions:
             f"Forge run for {wi_id}",
             work_item_id=wi_id,
             run_id=run_id,
+            caused_by_type="run",
+            caused_by_id=run_id,
             actor_role=Role.FORGE.value,
             account_id=account["account_id"],
             tags=["dispatch", "forge"],
