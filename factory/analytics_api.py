@@ -161,6 +161,7 @@ def _stage_stats(
         SELECT role, status, started_at, finished_at
         FROM runs
         WHERE role IN ('forge', 'reviewer', 'judge')
+          AND COALESCE(dry_run, 0) = 0
     """
     params: list[Any] = []
     if since is not None:
@@ -199,6 +200,29 @@ def _stage_stats(
             "fail_rate": round(fr, 4),
         }
     return out
+
+
+def _cache_hit_rate(
+    conn: sqlite3.Connection,
+    *,
+    since: str | None,
+) -> float:
+    q = """
+        SELECT
+            COUNT(*) AS total_runs,
+            COALESCE(SUM(CASE WHEN COALESCE(dry_run, 0) = 1 THEN 1 ELSE 0 END), 0) AS cache_hits
+        FROM runs
+        WHERE role = 'forge'
+          AND run_type = 'implement'
+    """
+    params: list[Any] = []
+    if since is not None:
+        q += " AND started_at >= ?"
+        params.append(since)
+    r = conn.execute(q, params).fetchone()
+    total = int(r["total_runs"] or 0)
+    cache_hits = int(r["cache_hits"] or 0)
+    return (cache_hits / total) if total else 0.0
 
 
 def _llm_totals(
@@ -295,6 +319,7 @@ def compute_analytics(conn: sqlite3.Connection, period: str) -> dict[str, Any]:
     retry_rate = (1.0 - first_pass) if done_n else 0.0
 
     stages = _stage_stats(conn, since=since)
+    cache_hit_rate = _cache_hit_rate(conn, since=since)
     llm = _llm_totals(conn, since=since)
 
     if bucket_mode == "hour":
@@ -324,6 +349,7 @@ def compute_analytics(conn: sqlite3.Connection, period: str) -> dict[str, Any]:
             "retry_rate": round(retry_rate, 4),
         },
         "stages": stages,
+        "cache_hit_rate": round(cache_hit_rate, 4),
         "llm": {
             "total_calls": llm["total_calls"],
             "total_tokens_in": llm["total_tokens_in"],
