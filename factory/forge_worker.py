@@ -97,14 +97,19 @@ def execute_forge_run(
     forge_body = build_forge_prompt(
         conn, work_item_id, repo_root=repo_root, effective_files=effective_files
     )
+    is_dry_run = _env_qwen_dry_run()
     forge_input_hash = payload_hash(
         {
             "work_item_id": work_item_id,
             "run_type": "implement",
             "prompt": forge_body,
+            "dry_run": is_dry_run,
         }
     )
-    conn.execute("UPDATE runs SET input_hash = ? WHERE id = ?", (forge_input_hash, run_id))
+    conn.execute(
+        "UPDATE runs SET input_hash = ?, dry_run = ? WHERE id = ?",
+        (forge_input_hash, 1 if is_dry_run else 0, run_id),
+    )
     cached = conn.execute(
         """
         SELECT id
@@ -121,6 +126,10 @@ def execute_forge_run(
         (run_id, work_item_id, forge_input_hash),
     ).fetchone()
     if cached:
+        conn.execute(
+            "UPDATE runs SET source_run_id = ?, dry_run = ? WHERE id = ?",
+            (cached["id"], 1 if is_dry_run else 0, run_id),
+        )
         logger.log(
             EventType.FORGE_STEP,
             "work_item",
@@ -244,14 +253,14 @@ def execute_forge_run(
             summary="qwen_cli_runner",
         )
 
-        if fr.ok and _env_qwen_dry_run():
+        if fr.ok and is_dry_run:
             apply_dry_run_placeholder(
                 ctx, conn, work_item_id, effective_files=effective_files
             )
 
         if fr.ok:
             changes = capture_changes(ctx)
-            if not _env_qwen_dry_run():
+            if not is_dry_run:
                 # Wet mode: изменения должны реально попасть в workspace (иначе «код написан» только в песочнице).
                 apply_sandbox_to_workspace(ctx=ctx, changes=changes, repo_root=repo_root)
                 missing_modify = declared_modify_paths_without_capture(

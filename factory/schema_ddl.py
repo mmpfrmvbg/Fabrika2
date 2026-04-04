@@ -257,6 +257,8 @@ CREATE TABLE IF NOT EXISTS runs (
     role            TEXT NOT NULL,
     run_type        TEXT NOT NULL,
     status          TEXT NOT NULL DEFAULT 'queued',
+    source_run_id   TEXT REFERENCES runs(id),
+    dry_run         INTEGER NOT NULL DEFAULT 0,
     parent_run_id   TEXT REFERENCES runs(id),
     correlation_id  TEXT,               -- связать цепочку прогонов
     sandbox_ref     TEXT,               -- ссылка на изолированное окружение

@@ -253,49 +253,133 @@ class ForgeWorkerCliFailuresTest(unittest.TestCase):
                 os.environ["FACTORY_QWEN_DRY_RUN"] = prev_dry
 
     def test_idempotency_cache_hit_skips_second_llm_call(self) -> None:
-        f = wire(self.db_path)
-        conn = f["conn"]
-        orch = f["orchestrator"]
-        wi_id = "wi_ut_cache"
-        run_1 = "run_ut_cache_1"
-        run_2 = "run_ut_cache_2"
-        _seed_atom_forge_queued(conn, wi_id, run_1)
+        prev_dry = os.environ.get("FACTORY_QWEN_DRY_RUN")
+        try:
+            os.environ["FACTORY_QWEN_DRY_RUN"] = "1"
+            f = wire(self.db_path)
+            conn = f["conn"]
+            orch = f["orchestrator"]
+            wi_id = "wi_ut_cache"
+            run_1 = "run_ut_cache_1"
+            run_2 = "run_ut_cache_2"
+            _seed_atom_forge_queued(conn, wi_id, run_1)
 
-        fr = ForgeResult(ok=True, exit_code=0, stdout="ok", stderr="")
-        with patch(_PATCH, return_value=fr):
-            run_forge_queued_runs(orch)
+            fr = ForgeResult(ok=True, exit_code=0, stdout="ok", stderr="")
+            with patch(_PATCH, return_value=fr):
+                run_forge_queued_runs(orch)
 
-        row_1 = conn.execute("SELECT status, input_hash FROM runs WHERE id = ?", (run_1,)).fetchone()
-        self.assertEqual(row_1["status"], RunStatus.COMPLETED.value)
-        self.assertTrue((row_1["input_hash"] or "").strip())
+            row_1 = conn.execute(
+                "SELECT status, input_hash, dry_run FROM runs WHERE id = ?",
+                (run_1,),
+            ).fetchone()
+            self.assertEqual(row_1["status"], RunStatus.COMPLETED.value)
+            self.assertTrue((row_1["input_hash"] or "").strip())
+            self.assertEqual(int(row_1["dry_run"]), 1)
 
-        acc = conn.execute("SELECT id FROM api_accounts LIMIT 1").fetchone()
-        conn.execute("UPDATE work_items SET status = ? WHERE id = ?", (WorkItemStatus.IN_PROGRESS.value, wi_id))
-        conn.execute(
-            """
-            INSERT INTO runs (id, work_item_id, agent_id, account_id, role, run_type, status)
-            VALUES (?, ?, ?, ?, ?, ?, 'queued')
-            """,
-            (
-                run_2,
-                wi_id,
-                f"agent_{Role.FORGE.value}",
-                acc["id"],
-                Role.FORGE.value,
-                RunType.IMPLEMENT.value,
-            ),
-        )
-        conn.commit()
+            acc = conn.execute("SELECT id FROM api_accounts LIMIT 1").fetchone()
+            conn.execute(
+                "UPDATE work_items SET status = ? WHERE id = ?",
+                (WorkItemStatus.IN_PROGRESS.value, wi_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO runs (id, work_item_id, agent_id, account_id, role, run_type, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'queued')
+                """,
+                (
+                    run_2,
+                    wi_id,
+                    f"agent_{Role.FORGE.value}",
+                    acc["id"],
+                    Role.FORGE.value,
+                    RunType.IMPLEMENT.value,
+                ),
+            )
+            conn.commit()
 
-        with patch(_PATCH, side_effect=AssertionError("LLM call must be skipped on cache hit")):
-            run_forge_queued_runs(orch)
+            with patch(_PATCH, side_effect=AssertionError("LLM call must be skipped on cache hit")):
+                run_forge_queued_runs(orch)
 
-        row_2 = conn.execute("SELECT status, input_hash FROM runs WHERE id = ?", (run_2,)).fetchone()
-        self.assertEqual(row_2["status"], RunStatus.COMPLETED.value)
-        self.assertEqual(row_1["input_hash"], row_2["input_hash"])
+            row_2 = conn.execute(
+                "SELECT status, input_hash, source_run_id, dry_run FROM runs WHERE id = ?",
+                (run_2,),
+            ).fetchone()
+            self.assertEqual(row_2["status"], RunStatus.COMPLETED.value)
+            self.assertEqual(row_1["input_hash"], row_2["input_hash"])
+            self.assertEqual(row_2["source_run_id"], run_1)
+            self.assertEqual(int(row_2["dry_run"]), 1)
 
-        steps_2 = conn.execute("SELECT COUNT(*) AS c FROM run_steps WHERE run_id = ?", (run_2,)).fetchone()["c"]
-        self.assertEqual(int(steps_2), 0)
+            steps_2 = conn.execute(
+                "SELECT COUNT(*) AS c FROM run_steps WHERE run_id = ?",
+                (run_2,),
+            ).fetchone()["c"]
+            self.assertEqual(int(steps_2), 0)
+        finally:
+            if prev_dry is None:
+                os.environ.pop("FACTORY_QWEN_DRY_RUN", None)
+            else:
+                os.environ["FACTORY_QWEN_DRY_RUN"] = prev_dry
+
+    def test_dry_and_wet_runs_use_different_input_hash(self) -> None:
+        prev_dry = os.environ.get("FACTORY_QWEN_DRY_RUN")
+        try:
+            f = wire(self.db_path)
+            conn = f["conn"]
+            orch = f["orchestrator"]
+            wi_id = "wi_ut_dry_wet_hash"
+            run_dry = "run_ut_dry_hash"
+            run_wet = "run_ut_wet_hash"
+            _seed_atom_forge_queued(conn, wi_id, run_dry)
+
+            os.environ["FACTORY_QWEN_DRY_RUN"] = "1"
+            fr = ForgeResult(ok=True, exit_code=0, stdout="ok", stderr="")
+            with patch(_PATCH, return_value=fr):
+                run_forge_queued_runs(orch)
+
+            dry_row = conn.execute(
+                "SELECT input_hash, dry_run FROM runs WHERE id = ?",
+                (run_dry,),
+            ).fetchone()
+            self.assertEqual(int(dry_row["dry_run"]), 1)
+            self.assertTrue((dry_row["input_hash"] or "").strip())
+
+            acc = conn.execute("SELECT id FROM api_accounts LIMIT 1").fetchone()
+            conn.execute(
+                "UPDATE work_items SET status = ? WHERE id = ?",
+                (WorkItemStatus.IN_PROGRESS.value, wi_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO runs (id, work_item_id, agent_id, account_id, role, run_type, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'queued')
+                """,
+                (
+                    run_wet,
+                    wi_id,
+                    f"agent_{Role.FORGE.value}",
+                    acc["id"],
+                    Role.FORGE.value,
+                    RunType.IMPLEMENT.value,
+                ),
+            )
+            conn.commit()
+
+            os.environ["FACTORY_QWEN_DRY_RUN"] = "0"
+            with patch(_PATCH, return_value=fr):
+                run_forge_queued_runs(orch)
+
+            wet_row = conn.execute(
+                "SELECT input_hash, dry_run FROM runs WHERE id = ?",
+                (run_wet,),
+            ).fetchone()
+            self.assertEqual(int(wet_row["dry_run"]), 0)
+            self.assertTrue((wet_row["input_hash"] or "").strip())
+            self.assertNotEqual(dry_row["input_hash"], wet_row["input_hash"])
+        finally:
+            if prev_dry is None:
+                os.environ.pop("FACTORY_QWEN_DRY_RUN", None)
+            else:
+                os.environ["FACTORY_QWEN_DRY_RUN"] = prev_dry
 
 
 if __name__ == "__main__":

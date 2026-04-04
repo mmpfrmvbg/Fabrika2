@@ -16,7 +16,7 @@ from .models import Role
 from .schema_ddl import DDL, V_API_USAGE_TODAY_RECREATE
 
 # Последняя миграция: 1=базовый DDL, 2=improvement_candidates, 3=file_changes.intent_override, 4=fsm creator_cancelled/archive_sweep, 5=judge_rejected release locks, 6=cleanup stale locks
-_SCHEMA_VERSION = 8
+_SCHEMA_VERSION = 9
 
 # Migration v2: self-improvement candidates (idempotent CREATE TABLE IF NOT EXISTS)
 IMPROVEMENT_CANDIDATES_DDL = """
@@ -233,6 +233,18 @@ def _migration_runs_retry_count(conn: sqlite3.Connection) -> None:
         pass
 
 
+def _migration_runs_source_and_dry_run(conn: sqlite3.Connection) -> None:
+    alters = [
+        "ALTER TABLE runs ADD COLUMN source_run_id TEXT REFERENCES runs(id)",
+        "ALTER TABLE runs ADD COLUMN dry_run INTEGER NOT NULL DEFAULT 0",
+    ]
+    for stmt in alters:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError:
+            pass
+
+
 @contextmanager
 def _advisory_file_lock(path: Path, *, timeout_sec: float = 60.0, poll_sec: float = 0.05):
     """
@@ -387,10 +399,30 @@ def ensure_schema(db_path: Path = DB_PATH) -> None:
                 conn.execute(
                     "INSERT OR IGNORE INTO migrations(version, name) VALUES (8, 'runs_retry_count')"
                 )
+                mv = _max_migration_version(conn)
+
+            if mv < 9:
+                _migration_runs_source_and_dry_run(conn)
+                conn.execute(
+                    "INSERT OR IGNORE INTO migrations(version, name) VALUES (9, 'runs_source_run_id_dry_run')"
+                )
 
             conn.commit()
         finally:
             conn.close()
+
+
+def resolve_effective_run_id(conn: sqlite3.Connection, run_id: str | None) -> str | None:
+    """Возвращает source_run_id (для cache-hit run) либо исходный run_id."""
+    if not run_id:
+        return None
+    row = conn.execute(
+        "SELECT COALESCE(source_run_id, id) AS effective_run_id FROM runs WHERE id = ?",
+        (run_id,),
+    ).fetchone()
+    if not row:
+        return run_id
+    return row["effective_run_id"] or run_id
 
 
 def migrate_schema(conn) -> None:
