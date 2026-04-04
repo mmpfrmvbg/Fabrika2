@@ -35,7 +35,7 @@ from .dashboard_unified_journal import JournalFilters, api_journal_query
 from .analytics_api import compute_analytics
 from .workers_status import workers_status_payload
 from .work_items_tree import build_work_items_tree, subtree_for_root_id
-from .db import ensure_schema, gen_id, get_connection
+from .db import ensure_schema, gen_id, get_connection, resolve_effective_run_id
 from .logging import FactoryLogger
 from .models import EventType, Role
 from .work_items import WorkItemOps
@@ -311,6 +311,17 @@ def _row(d: sqlite3.Row) -> dict[str, Any]:
 
 def _rows(rs: list[sqlite3.Row]) -> list[dict[str, Any]]:
     return [_row(r) for r in rs]
+
+
+def _serialize_run_row(d: sqlite3.Row) -> dict[str, Any]:
+    out = _row(d)
+    out["source_run_id"] = out.get("source_run_id")
+    out["dry_run"] = bool(out.get("dry_run"))
+    return out
+
+
+def _serialize_runs(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
+    return [_serialize_run_row(r) for r in rows]
 
 
 def _queue_depths_from_conn(conn: sqlite3.Connection) -> dict[str, int]:
@@ -751,7 +762,7 @@ def get_task_bundle(wi_id: str) -> dict[str, Any]:
         runs = conn.execute(
             """
             SELECT id, role, run_type, status, started_at, finished_at, work_item_id,
-                   error_summary, tokens_used
+                   error_summary, tokens_used, source_run_id, dry_run
             FROM runs WHERE work_item_id = ?
             ORDER BY started_at DESC
             """,
@@ -777,7 +788,7 @@ def get_task_bundle(wi_id: str) -> dict[str, Any]:
         ).fetchall()
         return {
             "work_item": {**_row(wi), "files": _rows(files), "event_log": _rows(ev)},
-            "runs": _rows(runs),
+            "runs": _serialize_runs(runs),
             "comments": [],
         }
     finally:
@@ -805,12 +816,13 @@ def runs_for_work_item(wi_id: str) -> dict[str, Any]:
         rows = conn.execute(
             """
             SELECT id, role, run_type, status, started_at, finished_at
+                   , source_run_id, dry_run
             FROM runs WHERE work_item_id = ?
             ORDER BY started_at DESC
             """,
             (wi_id,),
         ).fetchall()
-        return {"items": _rows(rows)}
+        return {"items": _serialize_runs(rows)}
     finally:
         conn.close()
 
@@ -826,6 +838,7 @@ def list_runs(
             rows = conn.execute(
                 """
                 SELECT id, role, run_type, status, started_at, finished_at, work_item_id
+                       , source_run_id, dry_run
                 FROM runs WHERE work_item_id = ?
                 ORDER BY started_at DESC LIMIT ?
                 """,
@@ -835,11 +848,12 @@ def list_runs(
             rows = conn.execute(
                 """
                 SELECT id, role, run_type, status, started_at, finished_at, work_item_id
+                       , source_run_id, dry_run
                 FROM runs ORDER BY started_at DESC LIMIT ?
                 """,
                 (limit,),
             ).fetchall()
-        return {"items": _rows(rows)}
+        return {"items": _serialize_runs(rows)}
     finally:
         conn.close()
 
@@ -850,16 +864,17 @@ def get_run_detail(run_id: str) -> dict[str, Any]:
     try:
         r = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
         if r:
+            effective_run_id = resolve_effective_run_id(conn, run_id) or run_id
             steps = conn.execute(
                 "SELECT * FROM run_steps WHERE run_id = ? ORDER BY step_no",
-                (run_id,),
+                (effective_run_id,),
             ).fetchall()
             fcs = conn.execute(
                 "SELECT * FROM file_changes WHERE run_id = ? ORDER BY created_at",
-                (run_id,),
+                (effective_run_id,),
             ).fetchall()
             return {
-                "run": _row(r),
+                "run": {**_serialize_run_row(r), "effective_run_id": effective_run_id},
                 "run_steps": _rows(steps),
                 "file_changes": _rows(fcs),
             }
@@ -871,7 +886,7 @@ def get_run_detail(run_id: str) -> dict[str, Any]:
             (run_id,),
         ).fetchall()
         if rows:
-            return {"runs": _rows(rows), "work_item_id": run_id}
+            return {"runs": _serialize_runs(rows), "work_item_id": run_id}
         raise HTTPException(status_code=404, detail="run / work_item not found")
     finally:
         conn.close()
@@ -881,13 +896,26 @@ def get_run_detail(run_id: str) -> dict[str, Any]:
 def get_run_steps(run_id: str) -> dict[str, Any]:
     conn = _open_ro()
     try:
+        effective_run_id = resolve_effective_run_id(conn, run_id) or run_id
         steps = conn.execute(
             "SELECT * FROM run_steps WHERE run_id = ? ORDER BY step_no",
-            (run_id,),
+            (effective_run_id,),
         ).fetchall()
         if not steps:
             raise HTTPException(status_code=404, detail="no steps for this run id")
-        return {"items": _rows(steps)}
+        return {"items": _rows(steps), "effective_run_id": effective_run_id}
+    finally:
+        conn.close()
+
+
+@app.get("/api/runs/{run_id}/effective")
+def get_effective_run_id(run_id: str) -> dict[str, Any]:
+    conn = _open_ro()
+    try:
+        r = conn.execute("SELECT id FROM runs WHERE id = ?", (run_id,)).fetchone()
+        if not r:
+            raise HTTPException(status_code=404, detail="run not found")
+        return {"effective_run_id": resolve_effective_run_id(conn, run_id) or run_id}
     finally:
         conn.close()
 

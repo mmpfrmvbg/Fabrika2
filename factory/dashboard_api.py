@@ -31,6 +31,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .config import load_dotenv, resolve_db_path
+from .db import resolve_effective_run_id
 from .dashboard_api_read import (
     api_task_detail,
     api_task_events_chronological,
@@ -476,6 +477,7 @@ def _runs(
         f"""
         SELECT r.id, r.work_item_id, r.agent_id, r.role, r.run_type, r.status,
                r.started_at, r.finished_at, r.git_branch, r.error_summary,
+               r.source_run_id, r.dry_run,
                wi.title AS work_item_title,
                (SELECT COUNT(*) FROM file_changes fc WHERE fc.run_id = r.id) AS file_changes_count,
                (SELECT COUNT(*) FROM run_steps rs WHERE rs.run_id = r.id) AS run_steps_count
@@ -502,6 +504,8 @@ def _runs(
                 "finished_at": r["finished_at"],
                 "git_branch": r["git_branch"],
                 "error_summary": r["error_summary"],
+                "source_run_id": r["source_run_id"],
+                "dry_run": bool(r["dry_run"]),
                 "work_item_title": r["work_item_title"],
                 "file_changes_count": r["file_changes_count"],
                 "run_steps_count": r["run_steps_count"],
@@ -513,6 +517,7 @@ def _runs(
 def _run_record_with_steps(conn: sqlite3.Connection, r: sqlite3.Row) -> dict:
     """Один прогон из строки ``runs`` + ``run_steps`` + ``file_changes``."""
     rid = r["id"]
+    effective_run_id = resolve_effective_run_id(conn, rid) or rid
     steps = conn.execute(
         """
         SELECT id, step_no, step_kind, status, summary, payload, duration_ms, created_at
@@ -520,7 +525,7 @@ def _run_record_with_steps(conn: sqlite3.Connection, r: sqlite3.Row) -> dict:
         WHERE run_id = ?
         ORDER BY step_no ASC
         """,
-        (rid,),
+        (effective_run_id,),
     ).fetchall()
     fcs = conn.execute(
         """
@@ -529,7 +534,7 @@ def _run_record_with_steps(conn: sqlite3.Connection, r: sqlite3.Row) -> dict:
         WHERE run_id = ?
         ORDER BY path
         """,
-        (rid,),
+        (effective_run_id,),
     ).fetchall()
     step_items: list[dict] = []
     for s in steps:
@@ -564,6 +569,9 @@ def _run_record_with_steps(conn: sqlite3.Connection, r: sqlite3.Row) -> dict:
         "finished_at": r["finished_at"],
         "git_branch": r["git_branch"],
         "error_summary": r["error_summary"],
+        "source_run_id": r["source_run_id"],
+        "dry_run": bool(r["dry_run"]),
+        "effective_run_id": effective_run_id,
         "steps": step_items,
         "file_changes": fc_items,
     }
@@ -574,7 +582,8 @@ def _run_by_run_id(conn: sqlite3.Connection, run_id: str) -> dict | None:
     r = conn.execute(
         """
         SELECT r.id, r.work_item_id, r.agent_id, r.role, r.run_type, r.status,
-               r.started_at, r.finished_at, r.git_branch, r.error_summary
+               r.started_at, r.finished_at, r.git_branch, r.error_summary,
+               r.source_run_id, r.dry_run
         FROM runs r
         WHERE r.id = ?
         """,
@@ -590,7 +599,8 @@ def _runs_detail(conn: sqlite3.Connection, work_item_id: str) -> dict:
     runs_rows = conn.execute(
         """
         SELECT r.id, r.work_item_id, r.agent_id, r.role, r.run_type, r.status,
-               r.started_at, r.finished_at, r.git_branch, r.error_summary
+               r.started_at, r.finished_at, r.git_branch, r.error_summary,
+               r.source_run_id, r.dry_run
         FROM runs r
         WHERE r.work_item_id = ?
         ORDER BY r.started_at DESC
@@ -599,6 +609,13 @@ def _runs_detail(conn: sqlite3.Connection, work_item_id: str) -> dict:
     ).fetchall()
     runs_out = [_run_record_with_steps(conn, r) for r in runs_rows]
     return {"work_item_id": work_item_id, "runs": runs_out}
+
+
+def _run_effective(conn: sqlite3.Connection, run_id: str) -> dict | None:
+    row = conn.execute("SELECT id FROM runs WHERE id = ?", (run_id,)).fetchone()
+    if not row:
+        return None
+    return {"effective_run_id": resolve_effective_run_id(conn, run_id) or run_id}
 
 
 def _agents(conn: sqlite3.Connection) -> dict:
@@ -1041,6 +1058,15 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                         offset=off_rr,
                     ),
                 )
+                return
+            m_run_effective = re.match(r"^/api/runs/([^/]+)/effective$", path)
+            if m_run_effective:
+                rid_eff = unquote(m_run_effective.group(1))
+                eff = _run_effective(conn, rid_eff)
+                if eff is None:
+                    _json_response(self, {"error": "not_found", "run_id": rid_eff}, 404)
+                    return
+                _json_response(self, eff)
                 return
             runs_rest = path[len("/api/runs/") :] if path.startswith("/api/runs/") else ""
             if runs_rest:
