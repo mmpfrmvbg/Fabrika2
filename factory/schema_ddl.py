@@ -284,6 +284,9 @@ CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
 CREATE INDEX IF NOT EXISTS idx_runs_agent  ON runs(agent_id);
 CREATE INDEX IF NOT EXISTS idx_runs_corr   ON runs(correlation_id);
 CREATE INDEX IF NOT EXISTS idx_runs_input_hash ON runs(input_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_runs_active_per_work_item
+    ON runs(work_item_id)
+    WHERE status IN ('queued','running');
 
 
 -- ───────────────────────────────────────────────────
