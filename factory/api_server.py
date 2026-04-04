@@ -12,7 +12,9 @@ Read-only HTTP API для дашборда (SQLite WAL, mode=ro).
 from __future__ import annotations
 
 import argparse
+import csv
 from contextlib import asynccontextmanager
+import io
 import json
 import logging
 import os
@@ -27,7 +29,7 @@ from typing import Any
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Path as FastPath, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from .config import (
@@ -405,6 +407,59 @@ def _serialize_runs(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
     return [_serialize_run_row(r) for r in rows]
 
 
+def _serialize_export_work_items(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    work_item_rows = conn.execute(
+        "SELECT * FROM work_items ORDER BY created_at ASC, id ASC"
+    ).fetchall()
+    run_rows = conn.execute(
+        "SELECT * FROM runs ORDER BY started_at ASC, id ASC"
+    ).fetchall()
+    event_rows = conn.execute(
+        "SELECT * FROM event_log ORDER BY event_time ASC, id ASC"
+    ).fetchall()
+
+    runs_by_work_item: dict[str, list[dict[str, Any]]] = {}
+    for row in run_rows:
+        run = _serialize_run_row(row)
+        wi_id = str(run.get("work_item_id") or "")
+        if wi_id:
+            runs_by_work_item.setdefault(wi_id, []).append(run)
+
+    events_by_work_item: dict[str, list[dict[str, Any]]] = {}
+    for row in event_rows:
+        event = _row(row)
+        wi_id = str(event.get("work_item_id") or "")
+        if wi_id:
+            events_by_work_item.setdefault(wi_id, []).append(event)
+
+    items: list[dict[str, Any]] = []
+    for row in work_item_rows:
+        wi = _row(row)
+        wi_id = str(wi["id"])
+        wi["runs"] = runs_by_work_item.get(wi_id, [])
+        wi["events"] = events_by_work_item.get(wi_id, [])
+        items.append(wi)
+    return items
+
+
+def _work_items_export_csv(items: list[dict[str, Any]]) -> str:
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["work_item_id", "kind", "status", "title", "runs_json", "events_json"])
+    for item in items:
+        writer.writerow(
+            [
+                item.get("id", ""),
+                item.get("kind", ""),
+                item.get("status", ""),
+                item.get("title", ""),
+                json.dumps(item.get("runs", []), ensure_ascii=False),
+                json.dumps(item.get("events", []), ensure_ascii=False),
+            ]
+        )
+    return out.getvalue()
+
+
 def _queue_depths_from_conn(conn: sqlite3.Connection) -> dict[str, int]:
     rows = conn.execute(
         """
@@ -616,6 +671,32 @@ def list_work_items(
         )
     finally:
         conn.close()
+
+
+@app.get("/api/export/work-items")
+def export_work_items(
+    format: str = Query("json", pattern="^(json|csv)$"),  # noqa: A002
+) -> Response:
+    """Export all work items with nested runs/events as a downloadable file."""
+    conn = _open_ro()
+    try:
+        items = _serialize_export_work_items(conn)
+    finally:
+        conn.close()
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    if format == "csv":
+        return Response(
+            content=_work_items_export_csv(items),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="work-items-export-{ts}.csv"'},
+        )
+
+    return Response(
+        content=json.dumps({"items": items, "total": len(items)}, ensure_ascii=False),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="work-items-export-{ts}.json"'},
+    )
 
 
 @app.get("/api/work-items/tree")
