@@ -197,6 +197,7 @@ class EventType(str, Enum):
     INTROSPECT_VISION_CREATED = "introspect.vision_created"
     # API: PATCH title/description (создатель)
     WORK_ITEM_UPDATED = "work_item.updated"
+    WORK_ITEM_RECOVERED = "work_item.recovered"
     WORK_ITEM_DELETED = "work_item.deleted"
     API_WORK_ITEM_CANCEL = "api.work_item.cancel_requested"
     API_WORK_ITEM_ARCHIVE = "api.work_item.archive_requested"

@@ -9,11 +9,14 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import signal
 import sqlite3
 import sys
+import threading
 import time
+from pathlib import Path
 from typing import Any
 
 from .agents import forge
@@ -23,6 +26,9 @@ from .logging import FactoryLogger
 from .models import EventType, Role, Severity
 from .queue_ops import claim_forge_inbox_atom, release_queue_lease
 from .worker_pipeline import drain_atom_downstream
+
+_HEARTBEAT_INTERVAL_SEC = 30.0
+_STUCK_WORK_ITEM_TIMEOUT_SEC = 300.0
 
 
 def _env_poll_sec() -> float:
@@ -42,6 +48,87 @@ def _retry_backoff(attempt: int) -> float:
     return (1.0, 2.0, 4.0)[min(attempt, 2)]
 
 
+def _touch_work_item_heartbeat(conn: sqlite3.Connection, work_item_id: str) -> None:
+    conn.execute(
+        """
+        UPDATE work_items
+        SET last_heartbeat_at = strftime('%Y-%m-%dT%H:%M:%f','now')
+        WHERE id = ?
+        """,
+        (work_item_id,),
+    )
+
+
+@contextlib.contextmanager
+def _heartbeat_loop(db_path: Path, work_item_id: str):
+    stop = threading.Event()
+    hb_conn = sqlite3.connect(str(db_path), timeout=30.0, check_same_thread=False)
+    hb_conn.row_factory = sqlite3.Row
+    hb_conn.execute("PRAGMA journal_mode = WAL")
+    hb_conn.execute("PRAGMA busy_timeout = 30000")
+
+    def _runner() -> None:
+        try:
+            while not stop.wait(_HEARTBEAT_INTERVAL_SEC):
+                _touch_work_item_heartbeat(hb_conn, work_item_id)
+                hb_conn.commit()
+        except sqlite3.Error:
+            pass
+
+    t = threading.Thread(target=_runner, daemon=True)
+    t.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        t.join(timeout=1.0)
+        hb_conn.close()
+
+
+def recover_stuck_running_work_items(
+    conn: sqlite3.Connection,
+    logger: FactoryLogger,
+    *,
+    worker_id: str,
+) -> int:
+    cutoff_expr = f"-{int(_STUCK_WORK_ITEM_TIMEOUT_SEC // 60)} minutes"
+    rows = conn.execute(
+        f"""
+        UPDATE work_items
+        SET status = COALESCE(NULLIF(previous_status, ''), 'pending'),
+            previous_status = status,
+            last_heartbeat_at = NULL,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%f','now')
+        WHERE status = 'running'
+          AND (
+                last_heartbeat_at IS NULL
+                OR replace(last_heartbeat_at, 'T', ' ') < datetime('now', '{cutoff_expr}')
+              )
+        RETURNING id, status, previous_status, last_heartbeat_at
+        """
+    ).fetchall()
+    for row in rows:
+        logger.log(
+            EventType.WORK_ITEM_RECOVERED,
+            "work_item",
+            row["id"],
+            "Recovered stuck running work item on worker startup",
+            work_item_id=row["id"],
+            actor_role=Role.ORCHESTRATOR.value,
+            payload={
+                "sub": "worker_startup_recovery",
+                "worker_id": worker_id,
+                "from_status": "running",
+                "to_status": row["status"],
+                "previous_status": row["previous_status"],
+                "last_heartbeat_at": row["last_heartbeat_at"],
+                "timeout_seconds": int(_STUCK_WORK_ITEM_TIMEOUT_SEC),
+            },
+            tags=["worker", "recovery"],
+        )
+    return len(rows)
+
+
 def worker_iteration(factory: dict[str, Any], worker_id: str) -> bool:
     """
     Одна попытка взять атом и прогнать пайплайн. Возвращает True, если была работа.
@@ -49,6 +136,7 @@ def worker_iteration(factory: dict[str, Any], worker_id: str) -> bool:
     orch = factory["orchestrator"]
     conn = factory["conn"]
     logger: FactoryLogger = factory["logger"]
+    db_path = Path(factory.get("db_path") or resolve_db_path())
 
     _apply_worker_sqlite_pragmas(conn)
     try:
@@ -84,10 +172,12 @@ def worker_iteration(factory: dict[str, Any], worker_id: str) -> bool:
             conn.commit()
             return True
 
+        _touch_work_item_heartbeat(conn, wi_id)
         conn.commit()
-        forge.run_forge_queued_runs(orch)
-        conn.commit()
-        drain_atom_downstream(orch, wi_id)
+        with _heartbeat_loop(db_path, wi_id):
+            forge.run_forge_queued_runs(orch)
+            conn.commit()
+            drain_atom_downstream(orch, wi_id)
         conn.commit()
         return True
     except Exception as e:  # noqa: BLE001
@@ -141,6 +231,22 @@ def run_worker_loop(*, worker_id: str, poll_sec: float) -> None:
         payload={"sub": "worker_started", "worker_id": worker_id},
         tags=["worker", "lifecycle"],
     )
+    recovered = recover_stuck_running_work_items(conn, logger, worker_id=worker_id)
+    if recovered:
+        logger.log(
+            EventType.TASK_STATUS_CHANGED,
+            "system",
+            "worker",
+            f"Recovered {recovered} stuck running work items",
+            actor_role=Role.ORCHESTRATOR.value,
+            payload={
+                "sub": "worker_startup_recovery",
+                "worker_id": worker_id,
+                "recovered_count": recovered,
+                "stuck_timeout_seconds": int(_STUCK_WORK_ITEM_TIMEOUT_SEC),
+            },
+            tags=["worker", "recovery"],
+        )
     conn.commit()
 
     try:
