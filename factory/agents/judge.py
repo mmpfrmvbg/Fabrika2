@@ -19,7 +19,7 @@ from ..contracts.judge import (
     parse_judge_verdict,
     validate_verdict_fsm_alignment,
 )
-from ..db import gen_id
+from ..db import gen_id, resolve_effective_run_id
 from ..models import EventType, Role, RunType, Severity, StepKind, WorkItemKind
 from ..qwen_cli_runner import run_qwen_cli
 from ._helpers import finish_run, insert_run, insert_run_step, lease_queue_row
@@ -220,24 +220,15 @@ def _fetch_declared_files_block(conn: sqlite3.Connection, wi_id: str) -> str:
     return "\n".join(out) + "\n"
 
 
-def _fetch_forge_artifacts_block(conn: sqlite3.Connection, wi_id: str) -> str:
+def _fetch_forge_artifacts_block(
+    conn: sqlite3.Connection, wi_id: str, subject_run_id: str | None
+) -> str:
     """
     Provide judge with minimal concrete evidence: diff summaries + current workspace snapshots
     of declared files (small caps).
     """
-    # Latest forge implement run
-    r = conn.execute(
-        """
-        SELECT id FROM runs
-        WHERE work_item_id = ? AND role = 'forge' AND run_type = 'implement'
-        ORDER BY started_at DESC LIMIT 1
-        """,
-        (wi_id,),
-    ).fetchone()
-    run_id = r["id"] if r else None
-
     chunks: list[str] = []
-    if run_id:
+    if subject_run_id:
         rows = conn.execute(
             """
             SELECT path, change_type, COALESCE(diff_summary,'') AS diff_summary
@@ -245,7 +236,7 @@ def _fetch_forge_artifacts_block(conn: sqlite3.Connection, wi_id: str) -> str:
             WHERE work_item_id = ? AND run_id = ?
             ORDER BY path
             """,
-            (wi_id, run_id),
+            (wi_id, subject_run_id),
         ).fetchall()
         if rows:
             chunks.append("### Diff summaries (latest forge run)\n")
@@ -424,6 +415,17 @@ def run_judge(orchestrator: Orchestrator, item: dict) -> None:
     wi = conn.execute("SELECT * FROM work_items WHERE id = ?", (wi_id,)).fetchone()
     if not wi:
         return
+    latest_impl = conn.execute(
+        """
+        SELECT id FROM runs
+        WHERE work_item_id = ? AND role = ? AND run_type = ?
+        ORDER BY started_at DESC
+        LIMIT 1
+        """,
+        (wi_id, Role.FORGE.value, RunType.IMPLEMENT.value),
+    ).fetchone()
+    subject_run_id = latest_impl["id"] if latest_impl else None
+    effective_subject_run_id = resolve_effective_run_id(conn, subject_run_id)
 
     prior_journal_lines = _fetch_prior_event_log_lines(conn, wi_id, limit=20)
     journal_block = _format_recent_factory_events_block(prior_journal_lines)
@@ -478,7 +480,7 @@ def run_judge(orchestrator: Orchestrator, item: dict) -> None:
         rr = _fetch_latest_review_result(conn, wi_id)
         siblings = _fetch_siblings(conn, wi_id)
         files_block = _fetch_declared_files_block(conn, wi_id)
-        artifacts_block = _fetch_forge_artifacts_block(conn, wi_id)
+        artifacts_block = _fetch_forge_artifacts_block(conn, wi_id, effective_subject_run_id)
         prompt = _build_judge_prompt(
             chain=chain,
             wi=dict(wi),
@@ -665,6 +667,22 @@ def run_judge(orchestrator: Orchestrator, item: dict) -> None:
             if verdict.verdict == "rejected"
             else None,
         ),
+    )
+
+    logger.log(
+        EventType.JUDGE_RESULT,
+        "work_item",
+        wi_id,
+        "JudgeResult",
+        work_item_id=wi_id,
+        run_id=run_id,
+        actor_role=Role.JUDGE.value,
+        payload={
+            **verdict.model_dump(),
+            "subject_run_id": subject_run_id,
+            "effective_subject_run_id": effective_subject_run_id,
+        },
+        tags=["judge", "judge_result"],
     )
 
     logger.log(

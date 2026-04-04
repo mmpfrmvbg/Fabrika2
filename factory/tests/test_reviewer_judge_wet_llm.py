@@ -306,6 +306,112 @@ class ReviewerWetLLMTests(unittest.TestCase):
 
 
 class JudgeWetLLMTests(unittest.TestCase):
+    def test_judge_uses_effective_source_run_artifacts_on_cache_hit(self) -> None:
+        path = Path(tempfile.mkstemp(prefix="factory_jv_wet_cache_", suffix=".db")[1])
+        f = None
+        prev = os.environ.get("FACTORY_QWEN_DRY_RUN")
+        os.environ["FACTORY_QWEN_DRY_RUN"] = "0"
+        try:
+            f = wire(path)
+            conn, orch = f["conn"], f["orchestrator"]
+            wi_id = "wet_jv_cache_hit"
+            source_run_id = "run_source_impl_j"
+            cached_run_id = "run_cached_impl_j"
+
+            conn.execute(
+                """
+                INSERT INTO work_items
+                    (id, root_id, kind, title, description, status, creator_role, owner_role, planning_depth)
+                VALUES (?, ?, 'atom', 'cache-hit judge', 'seed', ?, 'planner', 'judge', 0)
+                """,
+                (wi_id, wi_id, WorkItemStatus.READY_FOR_JUDGE.value),
+            )
+            conn.execute(
+                "INSERT INTO work_item_queue (work_item_id, queue_name) VALUES (?, 'judge_inbox')",
+                (wi_id,),
+            )
+            conn.execute(
+                """
+                INSERT INTO runs (id, work_item_id, agent_id, account_id, role, run_type, status, started_at, finished_at)
+                VALUES (?, ?, 'agent_forge', (SELECT id FROM api_accounts LIMIT 1), 'forge', 'implement', 'completed', '2026-04-04T11:00:00', '2026-04-04T11:00:10')
+                """,
+                (source_run_id, wi_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO runs (
+                    id, work_item_id, agent_id, account_id, role, run_type, status,
+                    source_run_id, started_at, finished_at
+                )
+                VALUES (?, ?, 'agent_forge', (SELECT id FROM api_accounts LIMIT 1), 'forge', 'implement', 'completed',
+                        ?, '2026-04-04T11:01:00', '2026-04-04T11:01:05')
+                """,
+                (cached_run_id, wi_id, source_run_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO file_changes (id, work_item_id, run_id, path, change_type, diff_summary)
+                VALUES ('fc_src_j', ?, ?, 'factory/judge_cached.py', 'modify', '@@ -1 +1 @@\\n-print(1)\\n+print(2)')
+                """,
+                (wi_id, source_run_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO run_steps (id, run_id, step_no, step_kind, status, summary, payload)
+                VALUES ('rs_src_j', ?, 1, 'tool_result', 'completed', 'qwen_cli_runner', '{}')
+                """,
+                (source_run_id,),
+            )
+            conn.commit()
+
+            captured_prompt: dict[str, str] = {}
+
+            def _fake_judge_cli(**kwargs):
+                captured_prompt["text"] = kwargs.get("full_prompt", "")
+                return ForgeResult(
+                    ok=True,
+                    stdout="\n".join(
+                        [
+                            "DECISION: APPROVED",
+                            "REASONCODE: quality",
+                            "EXPLANATION: ok",
+                            "SUGGESTED_FIX: ",
+                        ]
+                    ),
+                    stderr="",
+                    exit_code=0,
+                )
+
+            with patch("factory.agents.judge.run_qwen_cli", side_effect=_fake_judge_cli):
+                orch.tick()
+
+            self.assertIn("factory/judge_cached.py", captured_prompt.get("text", ""))
+            self.assertIn("print(2)", captured_prompt.get("text", ""))
+
+            ev = conn.execute(
+                """
+                SELECT payload FROM event_log
+                WHERE work_item_id = ? AND event_type = 'judge.result'
+                ORDER BY id DESC LIMIT 1
+                """,
+                (wi_id,),
+            ).fetchone()
+            self.assertIsNotNone(ev)
+            ev_payload = json.loads(ev["payload"] or "{}")
+            self.assertEqual(ev_payload.get("subject_run_id"), cached_run_id)
+            self.assertEqual(ev_payload.get("effective_subject_run_id"), source_run_id)
+        finally:
+            if prev is None:
+                os.environ.pop("FACTORY_QWEN_DRY_RUN", None)
+            else:
+                os.environ["FACTORY_QWEN_DRY_RUN"] = prev
+            if f is not None:
+                f["conn"].close()
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
     def test_judge_wet_approved_advances_atom_to_ready_for_work(self) -> None:
         path = Path(tempfile.mkstemp(prefix="factory_jv_wet_ok_", suffix=".db")[1])
         f = None
