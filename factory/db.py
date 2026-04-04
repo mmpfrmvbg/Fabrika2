@@ -25,7 +25,7 @@ from .schema_ddl import DDL, V_API_USAGE_TODAY_RECREATE
 # 4=fsm creator_cancelled/archive_sweep, 5=judge_rejected release locks, 6=cleanup stale locks,
 # 7=forensic_tracing_fields, 8=runs_retry_count, 9=runs_source_run_id_dry_run,
 # 10=work_items heartbeat, 11=sqlite_performance_indexes, 12=work_items_priority
-_SCHEMA_VERSION = 12
+_SCHEMA_VERSION = 13
 _SQLITE_TIMEOUT_SEC = SQLITE_TIMEOUT_SECONDS
 _SQLITE_BUSY_TIMEOUT_MS = SQLITE_BUSY_TIMEOUT_MS
 _LOG = logging.getLogger("factory.db")
@@ -310,6 +310,14 @@ def _migration_sqlite_performance_indexes(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_created_at ON event_log(event_time)")
 
 
+
+
+def _migration_work_items_dead_at(conn: sqlite3.Connection) -> None:
+    try:
+        conn.execute("ALTER TABLE work_items ADD COLUMN dead_at TIMESTAMP")
+    except sqlite3.OperationalError as e:
+        _LOG.debug("Skipping work_items.dead_at migration: %s", e)
+
 def _migration_work_items_priority(conn: sqlite3.Connection) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(work_items)").fetchall()}
     if "priority" not in cols:
@@ -496,6 +504,13 @@ def ensure_schema(db_path: Path = DB_PATH) -> None:
                 _migration_work_items_priority(conn)
                 conn.execute(
                     "INSERT OR IGNORE INTO migrations(version, name) VALUES (12, 'work_items_priority')"
+                )
+                mv = _max_migration_version(conn)
+
+            if mv < 13:
+                _migration_work_items_dead_at(conn)
+                conn.execute(
+                    "INSERT OR IGNORE INTO migrations(version, name) VALUES (13, 'work_items_dead_at')"
                 )
 
             conn.commit()

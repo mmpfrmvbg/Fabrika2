@@ -30,7 +30,7 @@ from typing import Any
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Path as FastPath, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from .config import (
@@ -1338,7 +1338,8 @@ def list_events(
     limit: int = Query(10, ge=1, le=500),
     work_item_id: str | None = None,
     event_type: str | None = None,
-) -> dict[str, Any]:
+    stream: bool = False,
+):
     conn = _open_ro()
     try:
         q = "SELECT * FROM event_log WHERE 1=1"
@@ -1352,7 +1353,14 @@ def list_events(
         q += " ORDER BY event_time DESC LIMIT ?"
         params.append(limit)
         rows = conn.execute(q, params).fetchall()
-        return {"items": _rows(rows), "limit": limit}
+        items = _rows(rows)
+        if stream:
+            def _event_stream():
+                for item in items:
+                    yield f"event: {item.get('event_type', 'event')}\n"
+                    yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+            return StreamingResponse(_event_stream(), media_type="text/event-stream")
+        return {"items": items, "limit": limit}
     finally:
         conn.close()
 

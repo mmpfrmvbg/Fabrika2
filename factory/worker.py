@@ -116,6 +116,7 @@ def recover_stuck_running_work_items(
         """
     ).fetchall()
     for row in rows:
+        release_queue_lease(conn, row["id"])
         notify_stuck(
             work_item_id=row["id"],
             title=None,
