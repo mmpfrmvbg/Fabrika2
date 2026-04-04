@@ -1,0 +1,33 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      FACTORY_DB: /data/factory.db
+      FACTORY_WORKER_TIMEOUT: ${FACTORY_WORKER_TIMEOUT:-1800}
+      FACTORY_API_HOST: ${FACTORY_API_HOST:-0.0.0.0}
+      FACTORY_API_PORT: ${FACTORY_API_PORT:-8000}
+    volumes:
+      - ./data:/data
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "factory.orchestrator_core"]
+    environment:
+      FACTORY_DB: /data/factory.db
+      FACTORY_WORKER_TIMEOUT: ${FACTORY_WORKER_TIMEOUT:-1800}
+      FACTORY_API_HOST: ${FACTORY_API_HOST:-0.0.0.0}
+      FACTORY_API_PORT: ${FACTORY_API_PORT:-8000}
+    volumes:
+      - ./data:/data

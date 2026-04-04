@@ -144,6 +144,21 @@ curl "http://127.0.0.1:8000/api/runs?work_item_id=wi_123&limit=50"
 ```
 (HTTP 422)
 
+## Docker
+
+Run the API and orchestrator with Docker Compose:
+
+```bash
+mkdir -p data
+docker-compose up --build
+```
+
+This starts:
+- `api` on `http://127.0.0.1:8000`
+- `worker` running `python -m factory.orchestrator_core`
+
+The SQLite database is persisted on the host at `./data/factory.db`.
+
 ## Testing
 
 Run all tests:
