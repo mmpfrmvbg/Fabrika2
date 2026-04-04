@@ -23,6 +23,7 @@ POST ``/api/tasks/<id>/children`` — дочерний epic|story|task|atom (``p
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -57,6 +58,7 @@ from .dashboard_live_read import (
 from .dashboard_unified_journal import JournalFilters, api_journal_query
 
 load_dotenv()
+_LOG = logging.getLogger(__name__)
 
 
 def _read_post_json(handler: BaseHTTPRequestHandler) -> dict:
@@ -1116,13 +1118,13 @@ def run_dashboard_api(host: str | None = None, port: int | None = None) -> None:
     host = host or os.environ.get("FACTORY_DASHBOARD_HOST", "127.0.0.1")
     port = port or int(os.environ.get("FACTORY_DASHBOARD_PORT", "8333"))
     server = HTTPServer((host, port), DashboardRequestHandler)
-    print(f"Factory dashboard API: http://{host}:{port}/")
-    print(f"  Open UI: http://{host}:{port}/factory-os.html")
-    print(f"  SQLite (read-only): {resolve_db_path()}")
+    _LOG.info("Factory dashboard API: http://%s:%s/", host, port)
+    _LOG.info("  Open UI: http://%s:%s/factory-os.html", host, port)
+    _LOG.info("  SQLite (read-only): %s", resolve_db_path())
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopped.")
+        _LOG.info("Stopped.")
 
 
 if __name__ == "__main__":

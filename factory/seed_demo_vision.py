@@ -8,12 +8,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .composition import wire
 from .db import gen_id
 from .models import Role
+
+_LOG = logging.getLogger(__name__)
 
 DEMO_VISION = "demo_vis_mvp_os"
 DEMO_EPIC = "demo_epic_live_dashboard"
@@ -76,7 +79,7 @@ def run_seed_demo_vision(db_path: Path | None = None) -> None:
     factory = wire(db_path)
     conn = factory["conn"]
     if conn.execute("SELECT 1 FROM work_items WHERE id = ?", (DEMO_VISION,)).fetchone():
-        print(f"seed-demo-vision: уже есть ({DEMO_VISION}). Пропуск.")
+        _LOG.info("seed-demo-vision: уже есть (%s). Пропуск.", DEMO_VISION)
         return
 
     now = _now()
@@ -224,7 +227,11 @@ def run_seed_demo_vision(db_path: Path | None = None) -> None:
         )
 
     conn.commit()
-    print(f"seed-demo-vision: создано Vision {DEMO_VISION}, Epic, 2 Story, 4 Task, {len(DEMO_ATOMS)} атомов (ready_for_work + forge_inbox).")
+    _LOG.info(
+        "seed-demo-vision: создано Vision %s, Epic, 2 Story, 4 Task, %s атомов (ready_for_work + forge_inbox).",
+        DEMO_VISION,
+        len(DEMO_ATOMS),
+    )
 
 
 def main() -> None:

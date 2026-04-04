@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import sqlite3
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -33,6 +34,8 @@ if TYPE_CHECKING:
     from .config import AccountManager
     from .fsm import StateMachine
     from .logging import FactoryLogger
+
+_LOG = logging.getLogger(__name__)
 
 
 def _log_forge_run_result(
@@ -539,14 +542,14 @@ def run_forge_worker_loop(
     def _shutdown(_sig=None, _frame=None) -> None:
         nonlocal stop
         stop = True
-        print("\nforge-worker: остановка (Ctrl+C)...")
+        _LOG.info("forge-worker: остановка (Ctrl+C)...")
 
     signal.signal(signal.SIGINT, _shutdown)
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _shutdown)
 
     dry = os.environ.get("FACTORY_QWEN_DRY_RUN", "")
-    print(
+    _LOG.info(
         f"forge-worker: DB={p} interval={idle_interval}s FACTORY_QWEN_DRY_RUN={dry!r} "
         f"(Ctrl+C to stop)"
     )
@@ -583,7 +586,7 @@ def run_forge_worker_loop(
             ).fetchone()
 
             if not pending_dispatch and not pending_run:
-                print("Очередь пуста, жду...")
+                _LOG.debug("Очередь пуста, жду...")
                 conn.commit()
                 time.sleep(idle_interval)
                 continue
@@ -591,13 +594,13 @@ def run_forge_worker_loop(
             target_wi = None
             if pending_dispatch:
                 target_wi = pending_dispatch["work_item_id"]
-                print(
+                _LOG.info(
                     f"Взял атом {pending_dispatch['work_item_id']} "
                     f"({pending_dispatch['title']}) — dispatch + forge..."
                 )
             elif pending_run:
                 target_wi = pending_run["work_item_id"]
-                print(
+                _LOG.info(
                     f"Продолжаю forge-run {pending_run['id']} "
                     f"для атома {pending_run['work_item_id']}..."
                 )
@@ -617,7 +620,7 @@ def run_forge_worker_loop(
                 ).fetchone()
                 if run and run["status"] in ("completed", "failed"):
                     ok = run["status"] == "completed"
-                    print(
+                    _LOG.info(
                         f"Forge завершён: {'success' if ok else 'fail'} "
                         f"(run {run['id']} -> {run['status']})"
                     )
@@ -630,7 +633,7 @@ def run_forge_worker_loop(
             conn.close()
         except Exception:
             pass
-        print("forge-worker: выход.")
+        _LOG.info("forge-worker: выход.")
 
 
 if __name__ == "__main__":

@@ -65,6 +65,7 @@ from .agents.planner import decompose_with_planner
 from .contracts.planner import PlannerInput
 from .qwen_cli_runner import run_qwen_cli
 from .chat_service import ChatService
+from .logging_config import configure_logging
 
 load_dotenv()
 
@@ -203,20 +204,19 @@ class _OrchestratorThread:
                     if attempt >= max_retries - 1:
                         break
                     wait = min(2 ** (attempt + 1), 16)
-                    print(
-                        f"[orchestrator] tick thread connect retry {attempt + 1}/{max_retries}, "
-                        f"wait {wait}s: {e}",
-                        flush=True,
+                    _LOG.warning(
+                        "[orchestrator] tick thread connect retry %s/%s, wait %ss: %s",
+                        attempt + 1,
+                        max_retries,
+                        wait,
+                        e,
                     )
                     time.sleep(wait)
             if conn is None:
                 raise RuntimeError(
                     f"Failed to start orchestrator thread (db locked): {last_err}"
                 )
-            print(
-                f"[orchestrator] tick thread started interval={interval}s db={_db_path()}",
-                flush=True,
-            )
+            _LOG.info("[orchestrator] tick thread started interval=%ss db=%s", interval, _db_path())
             while not self._stop.is_set():
                 try:
                     processed = self.tick_once(_factory=factory)
@@ -225,7 +225,7 @@ class _OrchestratorThread:
                         parts = ", ".join(
                             f"{k}:{processed.get(k, 0)}" for k in ("forge", "review", "judge")
                         )
-                        print(f"[tick {self.ticks_total}] {parts}", flush=True)
+                        _LOG.info("[tick %s] %s", self.ticks_total, parts)
                 except sqlite3.OperationalError as e:
                     msg = str(e).lower()
                     if "locked" not in msg:
@@ -236,7 +236,7 @@ class _OrchestratorThread:
                 time.sleep(interval)
         except Exception as e:  # noqa: BLE001
             tb = traceback.format_exc()
-            print(f"[orchestrator] tick thread crashed: {e}\n{tb}", flush=True)
+            _LOG.error("[orchestrator] tick thread crashed: %s\n%s", e, tb)
             with self._lock:
                 self.running = False
         finally:
@@ -372,6 +372,23 @@ async def api_key_auth_middleware(request: Request, call_next):
         except HTTPException as exc:
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
     return await call_next(request)
+
+
+@app.middleware("http")
+async def request_timing_middleware(request: Request, call_next):
+    started = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = (time.perf_counter() - started) * 1000.0
+    _LOG.info(
+        "request completed",
+        extra={
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "duration_ms": round(duration_ms, 2),
+        },
+    )
+    return response
 
 
 def _db_path() -> Path:
@@ -1992,6 +2009,7 @@ def qwen_fix_endpoint(
 def main(argv: list[str] | None = None) -> None:
     import uvicorn
 
+    configure_logging(level=logging.INFO)
     argv = argv if argv is not None else sys.argv[1:]
     p = argparse.ArgumentParser(description="Factory read-only HTTP API (SQLite)")
     p.add_argument("--db", help="Путь к SQLite (иначе FACTORY_DB / factory.db)")
@@ -2001,7 +2019,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.db:
         os.environ["FACTORY_DB"] = args.db
     host, port = args.host, args.port
-    print(f"Factory read-only API: http://{host}:{port}  DB={_db_path()}", flush=True)
+    _LOG.info("Factory read-only API: http://%s:%s  DB=%s", host, port, _db_path())
     uvicorn.run(app, host=host, port=port, log_level="info")
 
 

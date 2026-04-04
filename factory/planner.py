@@ -323,10 +323,10 @@ def run_plan_command(db_path: Path | None, vision_id: str) -> int:
     vid = vision_id.strip()
     row = conn.execute("SELECT id, kind FROM work_items WHERE id = ?", (vid,)).fetchone()
     if not row:
-        print(f"Ошибка: vision не найден: {vid}", flush=True)
+        _LOG.error("Ошибка: vision не найден: %s", vid)
         return 1
     if (row["kind"] or "").lower() != "vision":
-        print(f"Ошибка: {vid} не vision (kind={row['kind']!r})", flush=True)
+        _LOG.error("Ошибка: %s не vision (kind=%r)", vid, row["kind"])
         return 1
 
     planner = Planner(
@@ -338,16 +338,15 @@ def run_plan_command(db_path: Path | None, vision_id: str) -> int:
     summary = planner.decompose_vision(vid)
     if not summary.get("ok"):
         err = summary.get("error") or "unknown"
-        print(err, flush=True)
+        _LOG.error("%s", err)
         if summary.get("raw_preview"):
-            print("--- raw preview ---", flush=True)
-            print(summary["raw_preview"], flush=True)
+            _LOG.debug("--- raw preview ---")
+            _LOG.debug("%s", summary["raw_preview"])
         return 1
 
-    print(render_vision_tree(conn, vid), flush=True)
-    print(
+    _LOG.info("%s", render_vision_tree(conn, vid))
+    _LOG.info(
         f"\nИтого: {summary['epics']} epics, {summary['stories']} stories, "
-        f"{summary['tasks']} tasks, {summary['atoms']} atoms",
-        flush=True,
+        f"{summary['tasks']} tasks, {summary['atoms']} atoms"
     )
     return 0

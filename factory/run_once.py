@@ -7,11 +7,14 @@
 from __future__ import annotations
 
 import os
+import logging
 from pathlib import Path
 
 from .composition import wire
 from .config import resolve_db_path
 from .forge_next_atom import select_next_atom_for_forge
+
+_LOG = logging.getLogger(__name__)
 
 
 def run_run_once(db_path: Path | None = None) -> None:
@@ -25,14 +28,14 @@ def run_run_once(db_path: Path | None = None) -> None:
 
     picked = select_next_atom_for_forge(conn)
     if not picked:
-        print(
+        _LOG.info(
             "run-once: нет атомов в forge_inbox со статусом ready_for_work. "
             "Выполните: python -m factory --seed-demo"
         )
         return
 
     target = picked["id"]
-    print(f"run-once: целевой атом {target}")
+    _LOG.info("run-once: целевой атом %s", target)
 
     max_ticks = int(os.environ.get("FACTORY_RUN_ONCE_MAX_TICKS", "400"))
     for i in range(max_ticks):
@@ -46,12 +49,12 @@ def run_run_once(db_path: Path | None = None) -> None:
             (target,),
         ).fetchone()
         if run and run["status"] in ("completed", "failed"):
-            print(
+            _LOG.info(
                 f"run-once: forge run {run['id']} finished ({run['status']}) after {i + 1} tick(s)"
             )
             return
 
-    print(
+    _LOG.warning(
         f"run-once: превышен лимит тиков ({max_ticks}); "
         "проверьте FACTORY_QWEN_DRY_RUN, очереди и логи."
     )

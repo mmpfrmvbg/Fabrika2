@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from pathlib import Path
 
 from .config import resolve_db_path
 from .db import gen_id, get_connection, init_db
 
+_LOG = logging.getLogger(__name__)
 
 def main() -> None:
     raw = None
@@ -83,7 +85,7 @@ def main() -> None:
 
     conn.commit()
     conn.close()
-    print(f"seed_test_failures: OK db={db_path}")
+    _LOG.info("seed_test_failures: OK db=%s", db_path)
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -21,6 +22,8 @@ from pathlib import Path
 
 PROEKT = Path(__file__).resolve().parent.parent
 REPO = PROEKT.parent.parent
+
+_LOG = logging.getLogger(__name__)
 
 
 def _inject_oauth_keys_from_repo() -> None:
@@ -107,26 +110,26 @@ def main() -> int:
     try:
         _inject_oauth_keys_from_repo()
     except (OSError, ValueError, json.JSONDecodeError) as e:
-        print(f"FAIL: {e}", file=sys.stderr)
+        _LOG.error("FAIL: %s", e)
         return 1
 
     cfg = _reload_config()
     ids_cfg = [a["id"] for a in cfg.ACCOUNTS]
-    print(f"\n=== Конфиг: {len(cfg.ACCOUNTS)} аккаунтов ===\n{ids_cfg}")
+    _LOG.info("=== Конфиг: %s аккаунтов ===\n%s", len(cfg.ACCOUNTS), ids_cfg)
     if len(cfg.ACCOUNTS) != 3:
-        print("FAIL: нужны ровно 3 аккаунта.", file=sys.stderr)
+        _LOG.error("FAIL: нужны ровно 3 аккаунта.")
         return 1
 
-    print("\n=== AccountManager: three distinct slots (rate_limited -> next id) ===")
+    _LOG.info("=== AccountManager: three distinct slots (rate_limited -> next id) ===")
     seen = run_account_manager_rotation()
-    print(f"цепочка: {seen}")
+    _LOG.info("цепочка: %s", seen)
     if len(set(seen)) != 3:
-        print("FAIL: ожидались 3 разных account_id.", file=sys.stderr)
+        _LOG.error("FAIL: ожидались 3 разных account_id.")
         return 1
-    print("OK.")
+    _LOG.info("OK.")
 
     key_env = (os.environ.get("FACTORY_QWEN_SUBPROCESS_KEY_ENV") or "").strip() or "OPENAI_API_KEY"
-    print(f"\n=== Smoke qwen (по одному вызову на токен, env {key_env}) ===")
+    _LOG.info("=== Smoke qwen (по одному вызову на токен, env %s) ===", key_env)
 
     fd, raw = tempfile.mkstemp(suffix=".db")
     os.close(fd)
@@ -144,30 +147,30 @@ def main() -> int:
 
         for row in rows:
             aid, name, key = row["id"], row["name"], row["api_key"]
-            print(f"\n-- {name} ({aid})")
+            _LOG.info("-- %s (%s)", name, aid)
             code, tail = run_qwen_smoke(key, key_env)
             if code == 0:
-                print("OK (exit 0)")
+                _LOG.info("OK (exit 0)")
                 continue
-            print(f"exit {code}, try other env names for API key...")
+            _LOG.warning("exit %s, try other env names for API key...", code)
             ok = False
             for alt in alts:
                 if alt == key_env:
                     continue
                 c2, t2 = run_qwen_smoke(key, alt)
                 if c2 == 0:
-                    print(f"OK with env {alt} (exit 0)")
+                    _LOG.info("OK with env %s (exit 0)", alt)
                     ok = True
                     break
             if not ok:
-                print(f"FAIL:\n{tail}", file=sys.stderr)
+                _LOG.error("FAIL:\n%s", tail)
                 return 1
     finally:
         if f is not None:
             f["conn"].close()
         p.unlink(missing_ok=True)
 
-    print("\n=== All checks passed ===\n")
+    _LOG.info("=== All checks passed ===")
     return 0
 
 
