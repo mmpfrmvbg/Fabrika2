@@ -153,6 +153,7 @@ class EventType(str, Enum):
     JUDGE_STARTED = "judge.started"
     JUDGE_APPROVED = "judge.approved"
     JUDGE_REJECTED = "judge.rejected"
+    JUDGE_RESULT = "judge.result"
     JUDGE_VERDICT = "judge.verdict"
     JUDGE_INVALID_OUTPUT = "judge.invalid_output"
     FORGE_STARTED = "forge.started"
@@ -202,4 +203,3 @@ class EventType(str, Enum):
     # Автономный оркестратор: фоновые forge/review (FACTORY_ORCHESTRATOR_ASYNC=1)
     ORCHESTRATOR_AUTO_FORGE_STARTED = "orchestrator.auto_forge_started"
     ORCHESTRATOR_AUTO_REVIEW_STARTED = "orchestrator.auto_review_started"
-
