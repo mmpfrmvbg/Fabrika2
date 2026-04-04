@@ -23,8 +23,9 @@ from .schema_ddl import DDL, V_API_USAGE_TODAY_RECREATE
 
 # Последняя миграция: 1=базовый DDL, 2=improvement_candidates, 3=file_changes.intent_override,
 # 4=fsm creator_cancelled/archive_sweep, 5=judge_rejected release locks, 6=cleanup stale locks,
-# 7=forensic_tracing_fields, 8=runs_retry_count, 9=runs_source_run_id_dry_run, 10=work_items heartbeat
-_SCHEMA_VERSION = 10
+# 7=forensic_tracing_fields, 8=runs_retry_count, 9=runs_source_run_id_dry_run,
+# 10=work_items heartbeat, 11=sqlite_performance_indexes
+_SCHEMA_VERSION = 11
 _SQLITE_TIMEOUT_SEC = SQLITE_TIMEOUT_SECONDS
 _SQLITE_BUSY_TIMEOUT_MS = SQLITE_BUSY_TIMEOUT_MS
 _LOG = logging.getLogger("factory.db")
@@ -297,6 +298,18 @@ def _migration_work_items_last_heartbeat(conn: sqlite3.Connection) -> None:
         _LOG.debug("Skipping work_items.last_heartbeat_at migration: %s", e)
 
 
+def _migration_sqlite_performance_indexes(conn: sqlite3.Connection) -> None:
+    """Миграция 11: индексы для частых SQLite-паттернов запросов."""
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_work_items_status ON work_items(status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_work_items_parent_id ON work_items(parent_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_work_items_created_at ON work_items(created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_work_item_id ON runs(work_item_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(started_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_entity_id ON event_log(entity_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_event_type ON event_log(event_type)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_created_at ON event_log(event_time)")
+
+
 @contextmanager
 def _advisory_file_lock(
     path: Path, *, timeout_sec: float = 60.0, poll_sec: float = 0.05
@@ -462,6 +475,13 @@ def ensure_schema(db_path: Path = DB_PATH) -> None:
                 _migration_work_items_last_heartbeat(conn)
                 conn.execute(
                     "INSERT OR IGNORE INTO migrations(version, name) VALUES (10, 'work_items_last_heartbeat_at')"
+                )
+                mv = _max_migration_version(conn)
+
+            if mv < 11:
+                _migration_sqlite_performance_indexes(conn)
+                conn.execute(
+                    "INSERT OR IGNORE INTO migrations(version, name) VALUES (11, 'sqlite_performance_indexes')"
                 )
 
             conn.commit()
