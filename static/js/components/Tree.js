@@ -8,8 +8,6 @@ import { escapeHtml, getStatusLabel } from '../utils/helpers.js';
 import { api } from '../api/client.js';
 
 // Состояние фильтров
-let hideDone = false;
-let hideCancelled = true;
 let expandedNodes = new Set();
 
 /**
@@ -30,6 +28,15 @@ export function TreeComponent(container) {
   
   function render(tree, workItems) {
     if (!container) return;
+    const filters = store.state.treeFilters || {};
+    const searchQuery = String(filters.searchQuery || '').trim().toLowerCase();
+    const selectedStatus = String(filters.status || 'all').toLowerCase();
+    const hideDone = !!filters.hideDone;
+    const hideCancelled = !!filters.hideCancelled;
+    const filteredCount = countVisible(workItems, filters);
+    const totalCount = workItems?.length || 0;
+    const hasActiveFilters = isFiltersActive(filters);
+    const availableStatuses = getAvailableStatuses(workItems);
     
     if (!tree || tree.length === 0) {
       container.innerHTML = `
@@ -46,6 +53,27 @@ export function TreeComponent(container) {
     
     container.innerHTML = `
       <div class="tree-toolbar">
+        <input
+          type="text"
+          class="input"
+          placeholder="Search by title, description, id..."
+          value="${escapeHtml(filters.searchQuery || '')}"
+          oninput="window.updateTreeSearch(this.value)"
+          style="min-width:220px;max-width:320px"
+        />
+        <select
+          class="select"
+          onchange="window.updateTreeStatus(this.value)"
+          style="min-width:160px"
+        >
+          <option value="all" ${selectedStatus === 'all' ? 'selected' : ''}>All statuses</option>
+          ${availableStatuses.map(status => `
+            <option value="${escapeHtml(status)}" ${selectedStatus === status ? 'selected' : ''}>
+              ${escapeHtml(getStatusLabel(status))}
+            </option>
+          `).join('')}
+        </select>
+        <button type="button" class="tt-btn" onclick="window.clearTreeFilters?.()">Clear filters</button>
         <button type="button" class="tt-btn ${hideDone ? 'on' : ''}" onclick="window.toggleTreeFilter('done')">
           Скрыть завершённые
         </button>
@@ -55,20 +83,20 @@ export function TreeComponent(container) {
         <button type="button" class="tt-btn" onclick="window.expandAll?.()">Развернуть всё</button>
         <button type="button" class="tt-btn" onclick="window.collapseAll?.()">Свернуть</button>
         <span class="mono" style="font-size:11px;color:var(--text-faint)">
-          Показано ${countVisible(tree, workItems)} из ${workItems?.length || 0}
+          ${hasActiveFilters ? `Showing ${filteredCount} of ${totalCount} items` : `Showing ${totalCount} items`}
         </span>
       </div>
-      ${renderTreeNodes(tree, 0)}
+      ${renderTreeNodes(tree, 0, filters)}
     `;
     
     attachEventListeners();
   }
   
-  function renderTreeNodes(nodes, depth) {
+  function renderTreeNodes(nodes, depth, filters) {
     if (!nodes || nodes.length === 0) return '';
     
     return nodes.map(node => {
-      const isVisible = isNodeVisible(node);
+      const isVisible = isNodeVisible(node, filters);
       if (!isVisible) return '';
       
       const isExpanded = expandedNodes.has(node.id);
@@ -114,7 +142,7 @@ export function TreeComponent(container) {
 
           ${hasChildren && isExpanded ? `
             <div class="tree-children open" style="margin-left:${(depth + 1) * 24}px">
-              ${renderTreeNodes(children, depth + 1)}
+              ${renderTreeNodes(children, depth + 1, filters)}
             </div>
           ` : ''}
         </div>
@@ -122,19 +150,49 @@ export function TreeComponent(container) {
     }).join('');
   }
   
-  function isNodeVisible(node) {
+  function isNodeVisible(node, filters = {}) {
+    const query = String(filters.searchQuery || '').trim().toLowerCase();
+    const statusFilter = String(filters.status || 'all').toLowerCase();
+    const hideDone = !!filters.hideDone;
+    const hideCancelled = !!filters.hideCancelled;
+
     if (hideDone && (node.status === 'done' || node.status === 'archived')) return false;
     if (hideCancelled && node.status === 'cancelled') return false;
+
+    const nodeStatus = String(node.status || '').toLowerCase();
+    const inStatus = statusFilter === 'all' || nodeStatus === statusFilter;
+    const inSearch = !query || [
+      node.id,
+      node.title,
+      node.description
+    ].some(value => String(value || '').toLowerCase().includes(query));
+    const isSelfMatch = inStatus && inSearch;
     
-    if (!node.children || node.children.length === 0) return true;
+    if (!node.children || node.children.length === 0) return isSelfMatch;
     
-    // Если есть видимые дети — показываем узел
-    return node.children.some(child => isNodeVisible(child));
+    // Показываем родителя, если совпал сам или есть совпадающие дети
+    return isSelfMatch || node.children.some(child => isNodeVisible(child, filters));
   }
   
-  function countVisible(nodes, workItems) {
+  function countVisible(workItems, filters) {
     if (!workItems) return 0;
-    return workItems.filter(w => isNodeVisible(w)).length;
+    return workItems.filter(w => isNodeVisible(w, filters)).length;
+  }
+
+  function isFiltersActive(filters = {}) {
+    return Boolean(
+      String(filters.searchQuery || '').trim() ||
+      String(filters.status || 'all').toLowerCase() !== 'all'
+    );
+  }
+
+  function getAvailableStatuses(workItems = []) {
+    const statuses = [...new Set(
+      workItems
+        .map(item => String(item?.status || '').toLowerCase())
+        .filter(Boolean)
+    )];
+    return statuses.sort();
   }
   
   function attachEventListeners() {
@@ -157,10 +215,23 @@ export function TreeComponent(container) {
   
   // Глобальные функции (для onclick из HTML)
   window.toggleTreeFilter = (which) => {
-    if (which === 'done') hideDone = !hideDone;
-    if (which === 'cancelled') hideCancelled = !hideCancelled;
+    const current = store.state.treeFilters || {};
+    if (which === 'done') store.updateTreeFilters({ hideDone: !current.hideDone });
+    if (which === 'cancelled') store.updateTreeFilters({ hideCancelled: !current.hideCancelled });
     const { tree, workItems } = store.state;
     render(tree, workItems);
+  };
+
+  window.updateTreeSearch = (value) => {
+    store.updateTreeFilters({ searchQuery: String(value || '') });
+  };
+
+  window.updateTreeStatus = (value) => {
+    store.updateTreeFilters({ status: String(value || 'all').toLowerCase() });
+  };
+
+  window.clearTreeFilters = () => {
+    store.clearTreeFilters();
   };
   
   window.expandAll = () => {

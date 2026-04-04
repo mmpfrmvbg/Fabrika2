@@ -43,6 +43,12 @@ export const store = {
     // UI
     selectedWorkItemId: null,
     activePage: 'dashboard',
+    treeFilters: {
+      searchQuery: '',
+      status: 'all',
+      hideDone: false,
+      hideCancelled: true
+    },
     apiConnected: false,
     apiError: null,
     loading: {
@@ -347,6 +353,32 @@ export const store = {
    */
   setActivePage(page) {
     this.update({ activePage: page });
+  },
+
+  /**
+   * Обновить фильтры дерева задач (Work Items)
+   * @param {Object} patch - частичное обновление treeFilters
+   */
+  updateTreeFilters(patch = {}) {
+    this.update({
+      treeFilters: {
+        ...this.state.treeFilters,
+        ...patch
+      }
+    });
+  },
+
+  /**
+   * Сбросить фильтры дерева задач
+   */
+  clearTreeFilters() {
+    this.update({
+      treeFilters: {
+        ...this.state.treeFilters,
+        searchQuery: '',
+        status: 'all'
+      }
+    });
   },
   
   // ═══════════════════════════════════════════════════════
