@@ -103,7 +103,7 @@ def recover_stuck_running_work_items(
     rows = conn.execute(
         f"""
         UPDATE work_items
-        SET status = COALESCE(NULLIF(previous_status, ''), 'pending'),
+        SET status = COALESCE(NULLIF(previous_status, ''), 'ready_for_work'),
             previous_status = status,
             last_heartbeat_at = NULL,
             updated_at = strftime('%Y-%m-%dT%H:%M:%f','now')
@@ -117,7 +117,13 @@ def recover_stuck_running_work_items(
     ).fetchall()
     for row in rows:
         conn.execute(
-            "DELETE FROM work_item_queue WHERE work_item_id = ?",
+            """
+            UPDATE work_item_queue
+            SET lease_owner = NULL,
+                lease_until = NULL,
+                available_at = strftime('%Y-%m-%dT%H:%M:%f','now')
+            WHERE work_item_id = ?
+            """,
             (row["id"],),
         )
     for row in rows:

@@ -57,13 +57,18 @@ def insert_run(
     prompt_version = agent_row["prompt_version"] if agent_row else None
     model_params_json = agent_row["config_json"] if agent_row else None
     resolved_agent_version = agent_version or "unknown"
+    wi_row = conn.execute(
+        "SELECT correlation_id FROM work_items WHERE id = ?",
+        (wi_id,),
+    ).fetchone()
+    correlation_id = wi_row["correlation_id"] if wi_row else None
     conn.execute(
         """
         INSERT INTO runs (
-            id, work_item_id, agent_id, account_id, role, run_type, status,
+            id, work_item_id, agent_id, account_id, role, run_type, status, correlation_id,
             input_payload, input_hash, agent_version, prompt_version, model_name_snapshot, model_params_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             run_id,
@@ -73,6 +78,7 @@ def insert_run(
             role.value,
             run_type.value,
             status,
+            correlation_id,
             stable_json_dumps(input_payload) if input_payload is not None else None,
             payload_hash(input_payload) if input_payload is not None else None,
             resolved_agent_version,

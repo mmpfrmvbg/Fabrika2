@@ -85,20 +85,9 @@ def test_worker_crash_startup_recovery_reenqueues_on_tick(
     ).fetchone()
     assert wi["status"] == "ready_for_work"
     assert wi["previous_status"] == "running"
-    # Startup recovery removes stale queue rows for crashed running work;
-    # the orchestrator re-enqueues ready atoms on the next tick.
-    assert q is None
-
-    wired_factory["orchestrator"]._auto_enqueue_ready_atoms()
-    conn.commit()
-    q_reenqueued = conn.execute(
-        "SELECT queue_name, lease_owner, lease_until FROM work_item_queue "
-        "WHERE work_item_id='wi_crash'"
-    ).fetchone()
-    assert q_reenqueued is not None
-    assert q_reenqueued["queue_name"] == QueueName.FORGE_INBOX.value
-    assert q_reenqueued["lease_owner"] is None
-    assert q_reenqueued["lease_until"] is None
+    assert q is not None
+    assert q["lease_owner"] is None
+    assert q["lease_until"] is None
 
 
 def test_dead_letter_exhaustion_marks_item_dead(wired_factory) -> None:

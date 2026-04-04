@@ -25,7 +25,7 @@ from .schema_ddl import DDL, V_API_USAGE_TODAY_RECREATE
 # 4=fsm creator_cancelled/archive_sweep, 5=judge_rejected release locks, 6=cleanup stale locks,
 # 7=forensic_tracing_fields, 8=runs_retry_count, 9=runs_source_run_id_dry_run,
 # 10=work_items heartbeat, 11=sqlite_performance_indexes, 12=work_items_priority, 13=dead_status
-_SCHEMA_VERSION = 13
+_SCHEMA_VERSION = 14
 _SQLITE_TIMEOUT_SEC = SQLITE_TIMEOUT_SECONDS
 _SQLITE_BUSY_TIMEOUT_MS = SQLITE_BUSY_TIMEOUT_MS
 _LOG = logging.getLogger("factory.db")
@@ -346,6 +346,56 @@ def _migration_work_items_dead_status(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_correlation_ids(conn: sqlite3.Connection) -> None:
+    alters = [
+        "ALTER TABLE work_items ADD COLUMN correlation_id TEXT",
+        "ALTER TABLE runs ADD COLUMN correlation_id TEXT",
+        "ALTER TABLE event_log ADD COLUMN correlation_id TEXT",
+    ]
+    for stmt in alters:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError as e:
+            _LOG.debug("Skipping correlation migration statement %r: %s", stmt, e)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_wi_correlation ON work_items(correlation_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_corr ON runs(correlation_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_el_corr ON event_log(correlation_id)")
+    conn.execute(
+        """
+        UPDATE runs
+        SET correlation_id = COALESCE(
+            correlation_id,
+            (
+                SELECT wi.correlation_id
+                FROM work_items wi
+                WHERE wi.id = runs.work_item_id
+            )
+        )
+        WHERE correlation_id IS NULL
+        """
+    )
+    conn.execute(
+        """
+        UPDATE event_log
+        SET correlation_id = COALESCE(
+            correlation_id,
+            (
+                SELECT COALESCE(r.correlation_id, wi.correlation_id)
+                FROM runs r
+                LEFT JOIN work_items wi ON wi.id = event_log.work_item_id
+                WHERE r.id = event_log.run_id
+            ),
+            (
+                SELECT wi.correlation_id
+                FROM work_items wi
+                WHERE wi.id = event_log.work_item_id
+            )
+        )
+        WHERE correlation_id IS NULL
+        """
+    )
+
+
 @contextmanager
 def _advisory_file_lock(
     path: Path, *, timeout_sec: float = 60.0, poll_sec: float = 0.05
@@ -532,6 +582,13 @@ def ensure_schema(db_path: Path = DB_PATH) -> None:
                 _migration_work_items_dead_status(conn)
                 conn.execute(
                     "INSERT OR IGNORE INTO migrations(version, name) VALUES (13, 'work_items_dead_status')"
+                )
+                mv = _max_migration_version(conn)
+
+            if mv < 14:
+                _migration_correlation_ids(conn)
+                conn.execute(
+                    "INSERT OR IGNORE INTO migrations(version, name) VALUES (14, 'correlation_ids')"
                 )
 
             conn.commit()
