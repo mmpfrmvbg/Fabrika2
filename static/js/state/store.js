@@ -305,7 +305,7 @@ export const store = {
   /**
    * Загрузить решения judge/reviewer
    */
-  async loadJudgements() {
+  async async loadJudgements() {
     try {
       const judgements = await api.getJudgements();
       this.update({
