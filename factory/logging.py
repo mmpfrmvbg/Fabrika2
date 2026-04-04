@@ -55,23 +55,41 @@ class FactoryLogger:
             return 0
 
         ctx: dict = {}
+        correlation_id: str | None = None
         if work_item_id:
             ctx = resolve_task_context(self.conn, work_item_id)
+            crow = self.conn.execute(
+                "SELECT correlation_id FROM work_items WHERE id = ?",
+                (work_item_id,),
+            ).fetchone()
+            correlation_id = str(crow["correlation_id"]) if crow and crow["correlation_id"] else None
         elif run_id:
             row = self.conn.execute(
-                "SELECT work_item_id FROM runs WHERE id = ?", (run_id,)
+                "SELECT work_item_id, correlation_id FROM runs WHERE id = ?", (run_id,)
             ).fetchone()
+            if row and row["correlation_id"]:
+                correlation_id = str(row["correlation_id"])
             if row and row["work_item_id"]:
                 ctx = resolve_task_context(self.conn, row["work_item_id"])
+                if not correlation_id:
+                    crow = self.conn.execute(
+                        "SELECT correlation_id FROM work_items WHERE id = ?",
+                        (row["work_item_id"],),
+                    ).fetchone()
+                    correlation_id = (
+                        str(crow["correlation_id"]) if crow and crow["correlation_id"] else None
+                    )
+        if correlation_id:
+            ctx["correlation_id"] = correlation_id
         merged_payload = {**_coerce_payload_dict(payload), **ctx}
 
         cursor = self.conn.execute(
             """
             INSERT INTO event_log
                 (event_type, entity_type, entity_id, severity, message,
-                 run_id, work_item_id, actor_role, actor_id, account_id,
+                 run_id, work_item_id, actor_role, actor_id, account_id, correlation_id,
                  caused_by_type, caused_by_id, parent_event_id, payload, tags)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event_type.value,
@@ -84,6 +102,7 @@ class FactoryLogger:
                 actor_role,
                 actor_id,
                 account_id,
+                correlation_id,
                 caused_by_type,
                 caused_by_id,
                 parent_event_id,

@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS work_items (
     origin_work_item_id   TEXT REFERENCES work_items(id),  -- если переформулирована
     planning_depth        INTEGER NOT NULL DEFAULT 0,
     retry_count           INTEGER NOT NULL DEFAULT 0,
+    correlation_id        TEXT,
     max_retries           INTEGER NOT NULL DEFAULT """ + str(MAX_ATOM_RETRIES) + """,
     needs_human_review    INTEGER NOT NULL DEFAULT 0,
     estimated_complexity  TEXT,          -- simple / medium / complex
@@ -97,6 +98,7 @@ CREATE INDEX IF NOT EXISTS idx_wi_status     ON work_items(status);
 CREATE INDEX IF NOT EXISTS idx_wi_owner      ON work_items(owner_role);
 CREATE INDEX IF NOT EXISTS idx_wi_kind       ON work_items(kind);
 CREATE INDEX IF NOT EXISTS idx_wi_priority   ON work_items(status, priority);
+CREATE INDEX IF NOT EXISTS idx_wi_correlation ON work_items(correlation_id);
 
 CREATE TRIGGER IF NOT EXISTS trg_wi_updated
     AFTER UPDATE ON work_items
@@ -477,6 +479,7 @@ CREATE TABLE IF NOT EXISTS event_log (
     actor_role      TEXT,
     actor_id        TEXT,
     account_id      TEXT REFERENCES api_accounts(id),
+    correlation_id  TEXT,
     caused_by_type  TEXT,
     caused_by_id    TEXT,
     severity        TEXT NOT NULL DEFAULT 'info',
@@ -492,6 +495,7 @@ CREATE INDEX IF NOT EXISTS idx_el_time      ON event_log(event_time);
 CREATE INDEX IF NOT EXISTS idx_el_type      ON event_log(event_type);
 CREATE INDEX IF NOT EXISTS idx_el_severity  ON event_log(severity) WHERE severity IN ('warn','error','fatal');
 CREATE INDEX IF NOT EXISTS idx_el_account   ON event_log(account_id);
+CREATE INDEX IF NOT EXISTS idx_el_corr      ON event_log(correlation_id);
 CREATE INDEX IF NOT EXISTS idx_el_caused_by ON event_log(caused_by_type, caused_by_id);
 
 

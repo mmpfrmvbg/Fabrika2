@@ -24,6 +24,7 @@ import sys
 import threading
 import time
 import traceback
+from uuid import uuid4
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -119,6 +120,11 @@ class QwenFixRequest(BaseModel):
     type: str | None = Field(default="unknown", max_length=128)
     message: str = Field(..., min_length=1, max_length=10000)
     context: dict[str, Any] = Field(default_factory=dict)
+
+
+class RunCreateRequest(BaseModel):
+    work_item_id: str = Field(..., min_length=1, max_length=128)
+    correlation_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 def _valid_id(value: str, field: str) -> str:
@@ -1050,14 +1056,16 @@ def post_work_item_run(
     _: None = Depends(require_api_key),
 ) -> Any:
     """Запуск forge для атома (тот же путь, что POST /api/tasks/…/forge-run в dashboard_api)."""
+    correlation_id = str(uuid4())
     from .dashboard_task_run import accept_dashboard_task_run
 
-    ok, body, status = accept_dashboard_task_run(wi_id)
+    ok, body, status = accept_dashboard_task_run(wi_id, correlation_id=correlation_id)
     if not ok:
         return JSONResponse(status_code=status, content=body)
     return {
         "started": True,
         "run_id": body.get("run_id"),
+        "correlation_id": correlation_id,
         "ok": body.get("ok", True),
         "status": body.get("status", "started"),
         "message": body.get("message", "accepted"),
@@ -1140,7 +1148,7 @@ def get_task_bundle(wi_id: str = FastPath(..., min_length=1, max_length=128)) ->
             raise HTTPException(status_code=404, detail="work_item not found")
         runs = conn.execute(
             """
-            SELECT id, role, run_type, status, started_at, finished_at, work_item_id,
+            SELECT id, role, run_type, status, started_at, finished_at, work_item_id, correlation_id,
                    error_summary, tokens_used, source_run_id, dry_run
             FROM runs WHERE work_item_id = ?
             ORDER BY started_at DESC
@@ -1220,13 +1228,14 @@ def create_work_item_legacy(
             root_id = str(parent["root_id"])
             depth = int(parent["planning_depth"] or 0) + 1
 
+        correlation_id = str(uuid4())
         conn.execute(
             """
             INSERT INTO work_items (
                 id, parent_id, root_id, kind, title, description, status,
-                creator_role, owner_role, planning_depth, priority
+                creator_role, owner_role, planning_depth, priority, correlation_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, 'draft', 'creator', 'creator', ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, 'draft', 'creator', 'creator', ?, ?, ?)
             """,
             (
                 wi_id,
@@ -1237,6 +1246,7 @@ def create_work_item_legacy(
                 payload.description.strip() if payload.description else None,
                 depth,
                 int(payload.priority),
+                correlation_id,
             ),
         )
         conn.commit()
@@ -1246,13 +1256,59 @@ def create_work_item_legacy(
         conn.close()
 
 
+@app.post("/api/runs")
+def create_run(
+    body: RunCreateRequest = Body(...),
+    _: None = Depends(require_api_key),
+) -> Any:
+    wi_id = body.work_item_id.strip()
+    correlation_id = (body.correlation_id or "").strip() or str(uuid4())
+    conn = _open_rw()
+    try:
+        wi = conn.execute("SELECT id FROM work_items WHERE id = ?", (wi_id,)).fetchone()
+        if not wi:
+            raise HTTPException(status_code=404, detail="work_item not found")
+        run_id = gen_id("run")
+        conn.execute("UPDATE work_items SET correlation_id = ? WHERE id = ?", (correlation_id, wi_id))
+        conn.execute(
+            """
+            INSERT INTO runs (
+                id, work_item_id, agent_id, role, run_type, status, correlation_id
+            )
+            VALUES (?, ?, 'agent_forge', 'forge', 'implement', 'queued', ?)
+            """,
+            (run_id, wi_id, correlation_id),
+        )
+        logger = FactoryLogger(conn)
+        logger.log(
+            EventType.RUN_STARTED,
+            "run",
+            run_id,
+            "Run accepted via POST /api/runs",
+            run_id=run_id,
+            work_item_id=wi_id,
+            actor_role=Role.CREATOR.value,
+            payload={"source": "api.runs.create", "correlation_id": correlation_id},
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {
+        "ok": True,
+        "work_item_id": wi_id,
+        "run_id": run_id,
+        "correlation_id": correlation_id,
+        "status": "accepted",
+    }
+
+
 @app.get("/api/work-items/{wi_id}/runs")
 def runs_for_work_item(wi_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
     conn = _open_ro()
     try:
         rows = conn.execute(
             """
-            SELECT id, role, run_type, status, started_at, finished_at
+            SELECT id, role, run_type, status, started_at, finished_at, correlation_id
                    , source_run_id, dry_run
             FROM runs WHERE work_item_id = ?
             ORDER BY started_at DESC
@@ -1274,7 +1330,7 @@ def list_runs(
         if work_item_id:
             rows = conn.execute(
                 """
-                SELECT id, role, run_type, status, started_at, finished_at, work_item_id
+                SELECT id, role, run_type, status, started_at, finished_at, work_item_id, correlation_id
                        , source_run_id, dry_run
                 FROM runs WHERE work_item_id = ?
                 ORDER BY started_at DESC LIMIT ?
@@ -1284,7 +1340,7 @@ def list_runs(
         else:
             rows = conn.execute(
                 """
-                SELECT id, role, run_type, status, started_at, finished_at, work_item_id
+                SELECT id, role, run_type, status, started_at, finished_at, work_item_id, correlation_id
                        , source_run_id, dry_run
                 FROM runs ORDER BY started_at DESC LIMIT ?
                 """,

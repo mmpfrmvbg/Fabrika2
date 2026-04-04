@@ -313,6 +313,54 @@ def test_post_work_items_accepts_priority_and_get_returns_it(api_client: TestCli
     assert get_response.json()["work_item"]["priority"] == 9
 
 
+def test_post_work_items_assigns_correlation_id(api_client: TestClient) -> None:
+    response = api_client.post(
+        "/api/work_items",
+        json={"title": "Correlation item", "kind": "task"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    corr = payload["work_item"].get("correlation_id")
+    assert isinstance(corr, str)
+    assert len(corr) >= 32
+
+    wi_id = payload["work_item"]["id"]
+    fetched = api_client.get(f"/api/work-items/{wi_id}")
+    assert fetched.status_code == 200
+    assert fetched.json()["work_item"]["correlation_id"] == corr
+
+
+def test_post_runs_preserves_correlation_id_in_run_and_events(api_client: TestClient) -> None:
+    created = api_client.post("/api/work_items", json={"title": "Run item", "kind": "atom"})
+    wi_id = created.json()["work_item"]["id"]
+    corr = "11111111-2222-3333-4444-555555555555"
+
+    run_response = api_client.post(
+        "/api/runs",
+        json={"work_item_id": wi_id, "correlation_id": corr},
+    )
+    assert run_response.status_code == 200
+    assert run_response.json()["correlation_id"] == corr
+
+    db_conn = sqlite3.connect(str(api_server._db_path()))
+    db_conn.row_factory = sqlite3.Row
+    try:
+        run_row = db_conn.execute(
+            "SELECT correlation_id FROM runs WHERE work_item_id = ? ORDER BY started_at DESC, id DESC LIMIT 1",
+            (wi_id,),
+        ).fetchone()
+        assert run_row is not None
+        assert run_row["correlation_id"] == corr
+        ev_row = db_conn.execute(
+            "SELECT correlation_id, payload FROM event_log WHERE work_item_id = ? ORDER BY id DESC LIMIT 1",
+            (wi_id,),
+        ).fetchone()
+        assert ev_row is not None
+        assert ev_row["correlation_id"] == corr
+    finally:
+        db_conn.close()
+
+
 def test_legacy_work_items_list_supports_dead_status_filter(api_client: TestClient) -> None:
     response = api_client.get("/api/work_items?status=dead")
     assert response.status_code == 200

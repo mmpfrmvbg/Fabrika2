@@ -20,7 +20,7 @@ def _active_forge_run_count(conn, wi_id: str) -> int:
     return int(row["c"])
 
 
-def _log_denied(logger, wi_id: str, reason: str) -> None:
+def _log_denied(logger, wi_id: str, reason: str, *, correlation_id: str | None = None) -> None:
     logger.log(
         EventType.DASHBOARD_TASK_RUN_DENIED,
         "work_item",
@@ -29,12 +29,12 @@ def _log_denied(logger, wi_id: str, reason: str) -> None:
         severity=Severity.WARN,
         work_item_id=wi_id,
         actor_role=Role.CREATOR.value,
-        payload={"reason": reason},
+        payload={"reason": reason, "correlation_id": correlation_id},
         tags=["dashboard", "run"],
     )
 
 
-def accept_dashboard_task_run(wi_id: str) -> tuple[bool, dict, int]:
+def accept_dashboard_task_run(wi_id: str, *, correlation_id: str | None = None) -> tuple[bool, dict, int]:
     """
     Проверки: существование work_item, kind → atom (в т.ч. atm_change), ``ready_for_work``,
     нет конфликтующего forge-run (иначе 409).
@@ -52,7 +52,7 @@ def accept_dashboard_task_run(wi_id: str) -> tuple[bool, dict, int]:
     try:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
-            "SELECT id, kind, status FROM work_items WHERE id = ?",
+            "SELECT id, kind, status, correlation_id FROM work_items WHERE id = ?",
             (wi_id,),
         ).fetchone()
         if not row:
@@ -61,7 +61,9 @@ def accept_dashboard_task_run(wi_id: str) -> tuple[bool, dict, int]:
         else:
             nk, _ = _normalize_kind(row["kind"] if isinstance(row["kind"], str) else None)
             if nk != "atom":
-                _log_denied(logger, wi_id, f"only atom can be run from dashboard (got kind={nk})")
+                _log_denied(
+                    logger, wi_id, f"only atom can be run from dashboard (got kind={nk})", correlation_id=correlation_id
+                )
                 conn.commit()
                 deny = (
                     False,
@@ -69,7 +71,7 @@ def accept_dashboard_task_run(wi_id: str) -> tuple[bool, dict, int]:
                     400,
                 )
             elif row["status"] == "in_progress":
-                _log_denied(logger, wi_id, "forge already in progress for this atom")
+                _log_denied(logger, wi_id, "forge already in progress for this atom", correlation_id=correlation_id)
                 conn.commit()
                 deny = (
                     False,
@@ -94,6 +96,7 @@ def accept_dashboard_task_run(wi_id: str) -> tuple[bool, dict, int]:
                         logger,
                         wi_id,
                         f"run already in progress (existing_run_id={existing_run_id})",
+                        correlation_id=correlation_id,
                     )
                     conn.commit()
                     deny = (
@@ -106,7 +109,7 @@ def accept_dashboard_task_run(wi_id: str) -> tuple[bool, dict, int]:
                         409,
                     )
             if deny is None and _active_forge_run_count(conn, wi_id) > 0:
-                _log_denied(logger, wi_id, "forge run already queued or running")
+                _log_denied(logger, wi_id, "forge run already queued or running", correlation_id=correlation_id)
                 conn.commit()
                 deny = (
                     False,
@@ -118,6 +121,7 @@ def accept_dashboard_task_run(wi_id: str) -> tuple[bool, dict, int]:
                     logger,
                     wi_id,
                     f"status must be ready_for_work, got {row['status']}",
+                    correlation_id=correlation_id,
                 )
                 conn.commit()
                 deny = (
@@ -127,6 +131,12 @@ def accept_dashboard_task_run(wi_id: str) -> tuple[bool, dict, int]:
                 )
 
         if deny is None:
+            resolved_corr = correlation_id or (str(row["correlation_id"]) if row and row["correlation_id"] else None)
+            if resolved_corr:
+                conn.execute(
+                    "UPDATE work_items SET correlation_id = ? WHERE id = ?",
+                    (resolved_corr, wi_id),
+                )
             logger.log(
                 EventType.DASHBOARD_TASK_RUN_REQUESTED,
                 "work_item",
@@ -134,7 +144,7 @@ def accept_dashboard_task_run(wi_id: str) -> tuple[bool, dict, int]:
                 "Dashboard: run requested (enqueue forge_inbox)",
                 work_item_id=wi_id,
                 actor_role=Role.CREATOR.value,
-                payload={"source": "dashboard", "mode": "enqueue_only"},
+                payload={"source": "dashboard", "mode": "enqueue_only", "correlation_id": resolved_corr},
                 tags=["dashboard", "run"],
             )
             conn.execute(

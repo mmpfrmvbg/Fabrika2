@@ -83,15 +83,20 @@ class Actions:
             (wi_id,),
         ).fetchone()
         run_retry_count = int((wi_retry_count_row["retry_count"] if wi_retry_count_row else 0) or 0)
+        wi_corr = self.conn.execute(
+            "SELECT correlation_id FROM work_items WHERE id = ?",
+            (wi_id,),
+        ).fetchone()
+        correlation_id = wi_corr["correlation_id"] if wi_corr else None
 
         # Сначала runs: file_locks.run_id REFERENCES runs(id) при включённых FK
         self.conn.execute(
             """
             INSERT INTO runs (
-                id, work_item_id, agent_id, account_id, role, run_type, status,
+                id, work_item_id, agent_id, account_id, role, run_type, status, correlation_id,
                 input_payload, input_hash, agent_version, prompt_version, model_name_snapshot, model_params_json, retry_count
             )
-            VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -100,6 +105,7 @@ class Actions:
                 account["account_id"],
                 Role.FORGE.value,
                 RunType.IMPLEMENT.value,
+                correlation_id,
                 stable_json_dumps(input_payload),
                 payload_hash(input_payload),
                 agent_version,
