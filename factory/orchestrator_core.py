@@ -257,6 +257,28 @@ class Orchestrator:
                     """,
                     (str(e), item["work_item_id"]),
                 )
+                exhausted = self.conn.execute(
+                    """
+                    SELECT attempts, max_attempts
+                    FROM work_item_queue
+                    WHERE work_item_id = ?
+                    """,
+                    (item["work_item_id"],),
+                ).fetchone()
+                if (
+                    qname == QueueName.COMPLETION_INBOX.value
+                    and exhausted
+                    and int(exhausted["attempts"] or 0) >= int(exhausted["max_attempts"] or 0)
+                ):
+                    self.conn.execute(
+                        """
+                        UPDATE work_items
+                        SET status = 'dead',
+                            dead_at = strftime('%Y-%m-%dT%H:%M:%f','now')
+                        WHERE id = ?
+                        """,
+                        (item["work_item_id"],),
+                    )
 
     def _dispatch_judge(self, item: dict):
         judge.run_judge(self, item)

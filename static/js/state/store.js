@@ -17,6 +17,12 @@ export const store = {
     tree: [],
     journal: [],
     workItems: [],
+    pagination: {
+      currentPage: 1,
+      hasMore: false,
+      totalCount: 0,
+      pageSize: 20
+    },
     visions: [],
     runs: [],
     analytics: null,
@@ -160,11 +166,25 @@ export const store = {
   /**
    * Загрузить work items
    */
-  async loadWorkItems() {
+  async loadWorkItems(page = this.state.pagination.currentPage, pageSize = this.state.pagination.pageSize) {
     try {
-      const workItems = await api.getWorkItems();
-      this.update({ workItems: this._normalizeArray(workItems) });
+      const offset = Math.max(0, (page - 1) * pageSize);
+      const workItems = await api.getWorkItems({}, { limit: pageSize, offset });
+      const normalized = this._normalizeArray(workItems?.items || workItems);
+      const totalCount = Number(workItems?.total || normalized.length || 0);
+      this.update({
+        workItems: normalized,
+        pagination: {
+          ...this.state.pagination,
+          currentPage: page,
+          pageSize,
+          totalCount,
+          hasMore: offset + normalized.length < totalCount
+        },
+        apiError: null
+      });
     } catch (error) {
+      this.update({ apiError: error.message });
       console.error('[Store] Failed to load work items:', error);
     }
   },
@@ -311,7 +331,7 @@ export const store = {
   /**
    * Загрузить решения judge/reviewer
    */
-  async async loadJudgements() {
+  async loadJudgements() {
     try {
       const judgements = await api.getJudgements();
       this.update({
@@ -616,6 +636,29 @@ export const store = {
     };
   },
   
+
+
+  addWorkItem(item) {
+    this.update({ workItems: [...this.state.workItems, item] });
+  },
+
+  updateWorkItemStatus(id, status) {
+    this.update({
+      workItems: this.state.workItems.map((wi) =>
+        wi.id === id ? { ...wi, status } : wi
+      )
+    });
+  },
+
+  setFilter(key, value) {
+    this.update({
+      treeFilters: {
+        ...this.state.treeFilters,
+        [key]: value
+      }
+    });
+  },
+
   // ═══════════════════════════════════════════════════════
   // ORCHESTRATOR ACTIONS
   // ═══════════════════════════════════════════════════════

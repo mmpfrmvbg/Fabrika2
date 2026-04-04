@@ -317,6 +317,14 @@ def _migration_sqlite_performance_indexes(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_event_log_created_at ON event_log(event_time)")
 
 
+
+
+def _migration_work_items_dead_at(conn: sqlite3.Connection) -> None:
+    try:
+        conn.execute("ALTER TABLE work_items ADD COLUMN dead_at TIMESTAMP")
+    except sqlite3.OperationalError as e:
+        _LOG.debug("Skipping work_items.dead_at migration: %s", e)
+
 def _migration_work_items_priority(conn: sqlite3.Connection) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(work_items)").fetchall()}
     if "priority" not in cols:
