@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from .agents import forge
 from .models import QueueName, WorkItemStatus
-
-if TYPE_CHECKING:
-    from .orchestrator_core import Orchestrator
 
 
 def drain_atom_downstream(orch: Any, wi_id: str, *, max_rounds: int = 60) -> None:

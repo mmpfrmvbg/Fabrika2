@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
-
 from .logging import FactoryLogger
 from .models import EventType, Role
 from .fsm import StateMachine
