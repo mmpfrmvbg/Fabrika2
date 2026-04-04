@@ -279,6 +279,7 @@ window.goPage = (pageName) => {
 async function loadPageData(pageName) {
   switch (pageName) {
     case 'analytics': await store.loadAnalytics('24h'); break;
+    case 'judgements': await store.loadJudgements(); break;
     case 'improvements': await store.loadImprovements(); break;
     case 'hr': await store.loadHR(); break;
     case 'failures': await store.loadFailures(); break;

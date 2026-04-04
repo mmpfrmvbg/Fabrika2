@@ -278,7 +278,7 @@ export function JudgementsComponent(container) {
             </thead>
             <tbody>
               ${!judgementsArray || judgementsArray.length === 0 ? `
-                <tr><td colspan="6" style="padding:40px;text-align:center;color:var(--text-muted)">Загрузка...</td></tr>
+                <tr><td colspan="6" style="padding:40px;text-align:center;color:var(--text-muted)">Нет решений судьи</td></tr>
               ` : judgementsArray.map(j => `
                 <tr>
                   <td class="mono-id">${escapeHtml(j.id?.slice(0, 8) || '')}...</td>

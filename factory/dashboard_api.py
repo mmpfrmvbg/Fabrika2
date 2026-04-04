@@ -1093,8 +1093,12 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             if path in ("/api/judgements",):
                 _json_response(self, _judgements_stub(conn))
                 return
-            if path in ("/api/failure-clusters",):
-                _json_response(self, {"clusters": []})
+            if path in ("/api/failure-clusters", "/api/failures"):
+                _json_response(self, {"clusters": [], "items": []})
+                return
+            if path in ("/api/verdicts", "/api/judge_verdicts"):
+                payload = _judgements_stub(conn)
+                _json_response(self, payload.get("items", []))
                 return
             if path in ("/api/hr",):
                 _json_response(self, {"policies": [], "proposals": []})

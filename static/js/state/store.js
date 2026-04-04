@@ -22,6 +22,9 @@ export const store = {
     analytics: null,
     agents: null,
     fsm: null,
+    judgements: [],
+    failures: { items: [], clusters: [] },
+    hr: { policies: [], proposals: [] },
     improvements: [],
     workersStatus: null,
 
@@ -288,9 +291,30 @@ export const store = {
   async loadHR() {
     try {
       const hr = await api.getHR();
-      this.update({ hr });
+      this.update({
+        hr: {
+          policies: this._normalizeArray(hr?.policies, 'policies'),
+          proposals: this._normalizeArray(hr?.proposals, 'proposals')
+        }
+      });
     } catch (error) {
       console.error('[Store] Failed to load HR:', error);
+    }
+  },
+
+  /**
+   * Загрузить решения judge/reviewer
+   */
+  async loadJudgements() {
+    try {
+      const judgements = await api.getJudgements();
+      this.update({
+        judgements: {
+          items: this._normalizeArray(judgements?.items || judgements)
+        }
+      });
+    } catch (error) {
+      console.error('[Store] Failed to load judgements:', error);
     }
   },
 
@@ -300,7 +324,12 @@ export const store = {
   async loadFailures() {
     try {
       const failures = await api.getFailures();
-      this.update({ failures });
+      this.update({
+        failures: {
+          items: this._normalizeArray(failures?.items || failures),
+          clusters: this._normalizeArray(failures?.clusters, 'clusters')
+        }
+      });
     } catch (error) {
       console.error('[Store] Failed to load failures:', error);
     }
