@@ -12,6 +12,7 @@ import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .db import payload_hash
 from .forge_prompt import build_forge_prompt
 from .forge_sandbox import (
     apply_sandbox_to_workspace,
@@ -96,6 +97,71 @@ def execute_forge_run(
     forge_body = build_forge_prompt(
         conn, work_item_id, repo_root=repo_root, effective_files=effective_files
     )
+    forge_input_hash = payload_hash(
+        {
+            "work_item_id": work_item_id,
+            "run_type": "implement",
+            "prompt": forge_body,
+        }
+    )
+    conn.execute("UPDATE runs SET input_hash = ? WHERE id = ?", (forge_input_hash, run_id))
+    cached = conn.execute(
+        """
+        SELECT id
+        FROM runs
+        WHERE id != ?
+          AND work_item_id = ?
+          AND role = 'forge'
+          AND run_type = 'implement'
+          AND status = 'completed'
+          AND input_hash = ?
+        ORDER BY finished_at DESC, id DESC
+        LIMIT 1
+        """,
+        (run_id, work_item_id, forge_input_hash),
+    ).fetchone()
+    if cached:
+        logger.log(
+            EventType.FORGE_STEP,
+            "work_item",
+            work_item_id,
+            f"forge cache hit from run {cached['id']}",
+            work_item_id=work_item_id,
+            run_id=run_id,
+            payload={"step": "idempotency_cache_hit", "cached_run_id": cached["id"]},
+            tags=["forge", "cache"],
+        )
+        finish_run(conn, run_id, ok=True, logger=logger)
+        ok_t, msg_t = sm.apply_transition(
+            work_item_id,
+            "forge_completed",
+            actor_role=Role.FORGE.value,
+            run_id=run_id,
+        )
+        if not ok_t:
+            _log_forge_run_result(
+                logger,
+                work_item_id,
+                run_id,
+                success=False,
+                reason=f"forge_completed denied: {msg_t}",
+            )
+            finish_run(
+                conn,
+                run_id,
+                ok=False,
+                error_summary=f"forge_completed denied: {msg_t}",
+                logger=logger,
+            )
+            sm.apply_transition(
+                work_item_id,
+                "forge_failed",
+                actor_role=Role.FORGE.value,
+                run_id=run_id,
+            )
+            return
+        _log_forge_run_result(logger, work_item_id, run_id, success=True)
+        return
 
     ctx = None
     try:

@@ -247,7 +247,7 @@ def _rows_run_steps(
         FROM run_steps rs
         INNER JOIN runs r ON r.id = rs.run_id
         WHERE 1=1 {where_sql}
-        ORDER BY rs.created_at DESC, rs.run_id DESC, rs.step_no DESC
+        ORDER BY r.started_at DESC, rs.run_id DESC, rs.step_no ASC, rs.id ASC
     """
     try:
         return list(conn.execute(sql, params).fetchall())
