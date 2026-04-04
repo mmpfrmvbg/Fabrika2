@@ -31,7 +31,7 @@ def claim_forge_inbox_atom(conn: sqlite3.Connection, agent_id: str) -> str | Non
               AND wiq.available_at <= strftime('%Y-%m-%dT%H:%M:%f','now')
               AND wiq.attempts < wiq.max_attempts
               AND wi.status = 'ready_for_work'
-            ORDER BY wiq.priority ASC, wiq.created_at ASC
+            ORDER BY wi.priority DESC, wi.created_at ASC, wiq.created_at ASC
             LIMIT 1
         )
         RETURNING work_item_id

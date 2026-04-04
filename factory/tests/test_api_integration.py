@@ -232,3 +232,57 @@ def test_post_rate_limiting_returns_429(api_client: TestClient) -> None:
     assert limited.headers.get("Retry-After") is not None
     assert limited.headers["X-RateLimit-Limit"] == "60"
     assert limited.headers["X-RateLimit-Remaining"] == "0"
+
+
+def test_rate_limit_ignores_spoofed_forwarded_for(api_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    original = dict(api_server._RATE_LIMITS_PER_MINUTE)
+    api_server._RATE_LIMIT_STATE.clear()
+    api_server._RATE_LIMITS_PER_MINUTE["GET"] = 2
+    try:
+        r1 = api_client.get("/api/health", headers={"x-forwarded-for": "198.51.100.10"})
+        r2 = api_client.get("/api/health", headers={"x-forwarded-for": "198.51.100.11"})
+        r3 = api_client.get("/api/health", headers={"x-forwarded-for": "198.51.100.12"})
+        assert r1.status_code == 200
+        assert r2.status_code == 200
+        assert r3.status_code == 429
+    finally:
+        api_server._RATE_LIMITS_PER_MINUTE.clear()
+        api_server._RATE_LIMITS_PER_MINUTE.update(original)
+
+
+def test_rate_limit_state_ttl_eviction() -> None:
+    now = 2_000_000.0
+    api_server._RATE_LIMIT_STATE.clear()
+    api_server._RATE_LIMIT_STATE[("GET", "stale")] = {
+        "window_start": now - 700.0,
+        "count": 1,
+        "last_access": now - 700.0,
+    }
+    api_server._RATE_LIMIT_STATE[("GET", "fresh")] = {
+        "window_start": now - 1.0,
+        "count": 1,
+        "last_access": now - 1.0,
+    }
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(api_server.time, "time", lambda: now)
+    try:
+        api_server._rate_limit_meta("GET", "127.0.0.1")
+    finally:
+        monkeypatch.undo()
+    assert ("GET", "stale") not in api_server._RATE_LIMIT_STATE
+    assert ("GET", "fresh") in api_server._RATE_LIMIT_STATE
+
+
+def test_post_work_items_accepts_priority_and_get_returns_it(api_client: TestClient) -> None:
+    response = api_client.post(
+        "/api/work_items",
+        json={"title": "Priority item", "kind": "task", "priority": 9},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["work_item"]["priority"] == 9
+    wi_id = payload["work_item"]["id"]
+
+    get_response = api_client.get(f"/api/work_items?id={wi_id}")
+    assert get_response.status_code == 200
+    assert get_response.json()["work_item"]["priority"] == 9

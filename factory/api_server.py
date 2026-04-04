@@ -52,7 +52,7 @@ from .dashboard_unified_journal import JournalFilters, api_journal_query
 from .analytics_api import compute_analytics
 from .workers_status import workers_status_payload
 from .work_items_tree import build_work_items_tree, subtree_for_root_id
-from .db import ensure_schema, get_connection, resolve_effective_run_id
+from .db import ensure_schema, gen_id, get_connection, resolve_effective_run_id
 from .logging import FactoryLogger
 from .models import EventType, Role
 from .work_items import WorkItemOps
@@ -78,6 +78,7 @@ _RATE_LIMIT_WINDOW_SECONDS = 60
 _RATE_LIMITS_PER_MINUTE = {"GET": 300, "POST": 60}
 _RATE_LIMIT_LOCK = threading.Lock()
 _RATE_LIMIT_STATE: dict[tuple[str, str], dict[str, float | int]] = defaultdict(dict)
+_RATE_LIMIT_TTL_SECONDS = 600
 
 
 class WorkItemPatchRequest(BaseModel):
@@ -97,6 +98,14 @@ class ImprovementReviewRequest(BaseModel):
 class VisionRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
     description: str | None = Field(default=None, max_length=10000)
+
+
+class WorkItemCreateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=500)
+    description: str | None = Field(default=None, max_length=10000)
+    kind: str = Field(default="vision", min_length=1, max_length=32)
+    parent_id: str | None = Field(default=None, min_length=1, max_length=128)
+    priority: int = Field(default=0, ge=-100000, le=100000)
 
 
 class ChatCreateRequest(BaseModel):
@@ -408,11 +417,14 @@ async def request_timing_middleware(request: Request, call_next):
 
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip() or "unknown"
     if request.client and request.client.host:
-        return request.client.host
+        client_host = request.client.host
+        trusted_proxy = (os.environ.get("FACTORY_TRUSTED_PROXY") or "").strip()
+        if trusted_proxy and client_host == trusted_proxy:
+            forwarded = request.headers.get("x-forwarded-for")
+            if forwarded:
+                return forwarded.split(",")[0].strip() or client_host
+        return client_host
     return "unknown"
 
 
@@ -424,6 +436,14 @@ def _rate_limit_meta(method: str, ip: str) -> dict[str, int]:
     key = (method.upper(), ip)
     now = time.time()
     with _RATE_LIMIT_LOCK:
+        expired_keys = [
+            state_key
+            for state_key, state in _RATE_LIMIT_STATE.items()
+            if now - float(state.get("last_access", 0.0)) > _RATE_LIMIT_TTL_SECONDS
+        ]
+        for state_key in expired_keys:
+            _RATE_LIMIT_STATE.pop(state_key, None)
+
         state = _RATE_LIMIT_STATE.get(key) or {"window_start": now, "count": 0}
         window_start = float(state.get("window_start", now))
         count = int(state.get("count", 0))
@@ -433,7 +453,11 @@ def _rate_limit_meta(method: str, ip: str) -> dict[str, int]:
             count = 0
             elapsed = 0
         count += 1
-        _RATE_LIMIT_STATE[key] = {"window_start": window_start, "count": count}
+        _RATE_LIMIT_STATE[key] = {
+            "window_start": window_start,
+            "count": count,
+            "last_access": now,
+        }
         remaining = max(0, limit - count)
         retry_after = max(0, int(_RATE_LIMIT_WINDOW_SECONDS - elapsed))
         is_limited = 1 if count > limit else 0
@@ -1146,6 +1170,54 @@ def work_items_legacy(id: str | None = None) -> dict[str, Any]:
         if not wi:
             raise HTTPException(status_code=404, detail="not found")
         return {"work_item": _row(wi)}
+    finally:
+        conn.close()
+
+
+@app.post("/api/work_items")
+def create_work_item_legacy(
+    body: WorkItemCreateRequest | dict[str, Any] = Body(...),
+    _: None = Depends(require_api_key),
+) -> dict[str, Any]:
+    payload = body if isinstance(body, WorkItemCreateRequest) else WorkItemCreateRequest.model_validate(body)
+    conn = _open_rw()
+    try:
+        wi_id = gen_id("wi")
+        parent_id = payload.parent_id.strip() if payload.parent_id else None
+        root_id = wi_id
+        depth = 0
+        if parent_id:
+            parent = conn.execute(
+                "SELECT root_id, planning_depth FROM work_items WHERE id = ?",
+                (parent_id,),
+            ).fetchone()
+            if not parent:
+                raise HTTPException(status_code=404, detail="parent not found")
+            root_id = str(parent["root_id"])
+            depth = int(parent["planning_depth"] or 0) + 1
+
+        conn.execute(
+            """
+            INSERT INTO work_items (
+                id, parent_id, root_id, kind, title, description, status,
+                creator_role, owner_role, planning_depth, priority
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 'draft', 'creator', 'creator', ?, ?)
+            """,
+            (
+                wi_id,
+                parent_id,
+                root_id,
+                payload.kind.strip().lower(),
+                payload.title.strip(),
+                payload.description.strip() if payload.description else None,
+                depth,
+                int(payload.priority),
+            ),
+        )
+        conn.commit()
+        wi = conn.execute("SELECT * FROM work_items WHERE id = ?", (wi_id,)).fetchone()
+        return {"ok": True, "work_item": _row(wi)}
     finally:
         conn.close()
 

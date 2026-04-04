@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS work_items (
     acceptance_criteria   TEXT,           -- JSON-массив критериев приёмки
     status                TEXT NOT NULL DEFAULT 'draft',
     previous_status       TEXT,          -- для возврата из blocked
-    priority              INTEGER NOT NULL DEFAULT 100,
+    priority              INTEGER NOT NULL DEFAULT 0,
     creator_role          TEXT NOT NULL,
     owner_role            TEXT,          -- кому сейчас "мяч"
     assigned_agent_id     TEXT REFERENCES agents(id),
