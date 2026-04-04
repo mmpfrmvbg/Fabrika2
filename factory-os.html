@@ -1402,6 +1402,18 @@ button.btn-dash-run:disabled { opacity: 0.45; cursor: not-allowed; }
 
     <!-- KPIs -->
     <div class="kpi-grid" id="kpi-grid"></div>
+    <div class="card" style="margin-bottom:var(--space-3)">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <span><span class="card-header-icon">◇</span> Work Items</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn" onclick="downloadWorkItemsExport('json')" title="Скачать JSON экспорт">Export JSON</button>
+          <button type="button" class="btn" onclick="downloadWorkItemsExport('csv')" title="Скачать CSV экспорт">Export CSV</button>
+        </div>
+      </div>
+      <div style="padding:var(--space-3);color:var(--text-muted);font-size:var(--text-xs)">
+        Экспорт из <span class="mono">GET /api/export/work-items?format=json|csv</span> (включая runs и events).
+      </div>
+    </div>
 
     <div class="card" style="margin-bottom:var(--space-3)">
       <div class="card-header"><span class="card-header-icon">◇</span> Visions</div>
@@ -2318,6 +2330,23 @@ async function onDashboardRunClick(ev, wiId) {
     _dashboardRunBusy.delete(wiId);
     renderTree();
   }
+}
+
+function downloadWorkItemsExport(format) {
+  const base = resolveApiBase();
+  if (!base) {
+    showFactoryToast('Нет связи с API — экспорт недоступен', 'error');
+    return;
+  }
+  const safeFormat = format === 'csv' ? 'csv' : 'json';
+  const url = base + '/api/export/work-items?format=' + encodeURIComponent(safeFormat);
+  const a = document.createElement('a');
+  a.href = url;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  showFactoryToast('Экспорт запущен: ' + safeFormat.toUpperCase(), 'ok');
 }
 
 async function postDetailFsmTransition(wiId, eventName) {

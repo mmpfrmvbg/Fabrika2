@@ -96,6 +96,22 @@ function initComponents() {
     if (store.state.chat.isOpen) store.closeChat();
     else store.openChat(workItemId);
   };
+
+  window.downloadWorkItemsExport = (format = 'json') => {
+    const safeFormat = format === 'csv' ? 'csv' : 'json';
+    const apiBase = window.FACTORY_API_BASE ||
+      document.documentElement.getAttribute('data-api-base') ||
+      'http://127.0.0.1:8000';
+    const url = new URL('/api/export/work-items', apiBase);
+    url.searchParams.set('format', safeFormat);
+    const link = document.createElement('a');
+    link.href = url.toString();
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    showFactoryToast(`Экспорт запущен: ${safeFormat.toUpperCase()}`, 'success');
+  };
 }
 
 // ═══════════════════════════════════════════════════════
