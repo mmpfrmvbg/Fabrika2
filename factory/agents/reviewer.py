@@ -359,6 +359,12 @@ def run_review(orchestrator: Orchestrator, item: dict) -> None:
         role=Role.REVIEWER,
         run_type=RunType.REVIEW,
         account_id=account["account_id"],
+        input_payload={
+            "work_item_id": wi_id,
+            "kind": wi["kind"],
+            "status": wi["status"],
+            "title": wi["title"],
+        },
     )
 
     logger.log(
@@ -368,6 +374,8 @@ def run_review(orchestrator: Orchestrator, item: dict) -> None:
         "Run started (reviewer)",
         work_item_id=wi_id,
         run_id=run_id,
+        caused_by_type="run",
+        caused_by_id=run_id,
         actor_role=Role.REVIEWER.value,
         account_id=account["account_id"],
     )
@@ -378,6 +386,8 @@ def run_review(orchestrator: Orchestrator, item: dict) -> None:
         "Начато ревью (Фаза 2)",
         work_item_id=wi_id,
         run_id=run_id,
+        caused_by_type="run",
+        caused_by_id=run_id,
         actor_role=Role.REVIEWER.value,
         account_id=account["account_id"],
         tags=["review", "phase2"],

@@ -5,15 +5,18 @@ import os
 import sqlite3
 import time
 import uuid
+import hashlib
+import json
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from .config import ACCOUNTS, DB_PATH
 from .models import Role
 from .schema_ddl import DDL, V_API_USAGE_TODAY_RECREATE
 
 # Последняя миграция: 1=базовый DDL, 2=improvement_candidates, 3=file_changes.intent_override, 4=fsm creator_cancelled/archive_sweep, 5=judge_rejected release locks, 6=cleanup stale locks
-_SCHEMA_VERSION = 6
+_SCHEMA_VERSION = 7
 
 # Migration v2: self-improvement candidates (idempotent CREATE TABLE IF NOT EXISTS)
 IMPROVEMENT_CANDIDATES_DDL = """
@@ -191,6 +194,38 @@ def _api_accounts_column_names(conn) -> set[str]:
     return {r[1] for r in conn.execute("PRAGMA table_info(api_accounts)").fetchall()}
 
 
+def stable_json_dumps(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def payload_hash(value: Any) -> str:
+    return hashlib.sha256(stable_json_dumps(value).encode("utf-8")).hexdigest()
+
+
+def _migration_forensic_tracing(conn: sqlite3.Connection) -> None:
+    alters = [
+        "ALTER TABLE runs ADD COLUMN agent_version TEXT",
+        "ALTER TABLE runs ADD COLUMN prompt_version TEXT",
+        "ALTER TABLE runs ADD COLUMN model_name_snapshot TEXT",
+        "ALTER TABLE runs ADD COLUMN model_params_json TEXT",
+        "ALTER TABLE runs ADD COLUMN input_hash TEXT",
+        "ALTER TABLE run_steps ADD COLUMN agent_version TEXT",
+        "ALTER TABLE run_steps ADD COLUMN input_hash TEXT",
+        "ALTER TABLE event_log ADD COLUMN caused_by_type TEXT",
+        "ALTER TABLE event_log ADD COLUMN caused_by_id TEXT",
+    ]
+    for stmt in alters:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError:
+            pass
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_input_hash ON runs(input_hash)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_rs_input_hash ON run_steps(input_hash)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_el_caused_by ON event_log(caused_by_type, caused_by_id)"
+    )
+
+
 @contextmanager
 def _advisory_file_lock(path: Path, *, timeout_sec: float = 60.0, poll_sec: float = 0.05):
     """
@@ -330,6 +365,13 @@ def ensure_schema(db_path: Path = DB_PATH) -> None:
                 _migration_cleanup_stale_locks(conn)
                 conn.execute(
                     "INSERT OR IGNORE INTO migrations(version, name) VALUES (6, 'cleanup_stale_locks')"
+                )
+                mv = _max_migration_version(conn)
+
+            if mv < 7:
+                _migration_forensic_tracing(conn)
+                conn.execute(
+                    "INSERT OR IGNORE INTO migrations(version, name) VALUES (7, 'forensic_tracing_fields')"
                 )
 
             conn.commit()

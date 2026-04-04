@@ -11,9 +11,9 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from ..db import gen_id
+from ..db import gen_id, payload_hash, stable_json_dumps
 from ..models import EventType, Role, RunStatus, RunType, Severity, StepKind
 
 if TYPE_CHECKING:
@@ -45,14 +45,41 @@ def insert_run(
     run_type: RunType,
     account_id: str,
     status: str = RunStatus.RUNNING.value,
+    input_payload: Any = None,
+    agent_version: str | None = None,
 ) -> None:
     agent_id = f"agent_{role.value}"
+    agent_row = conn.execute(
+        "SELECT model_name, prompt_version, config_json FROM agents WHERE id = ?",
+        (agent_id,),
+    ).fetchone()
+    model_name_snapshot = agent_row["model_name"] if agent_row else None
+    prompt_version = agent_row["prompt_version"] if agent_row else None
+    model_params_json = agent_row["config_json"] if agent_row else None
+    resolved_agent_version = agent_version or "unknown"
     conn.execute(
         """
-        INSERT INTO runs (id, work_item_id, agent_id, account_id, role, run_type, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO runs (
+            id, work_item_id, agent_id, account_id, role, run_type, status,
+            input_payload, input_hash, agent_version, prompt_version, model_name_snapshot, model_params_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (run_id, wi_id, agent_id, account_id, role.value, run_type.value, status),
+        (
+            run_id,
+            wi_id,
+            agent_id,
+            account_id,
+            role.value,
+            run_type.value,
+            status,
+            stable_json_dumps(input_payload) if input_payload is not None else None,
+            payload_hash(input_payload) if input_payload is not None else None,
+            resolved_agent_version,
+            prompt_version,
+            model_name_snapshot,
+            model_params_json,
+        ),
     )
 
 
@@ -106,6 +133,8 @@ def finish_run(
                 "Run finished" if ok else (error_summary or "Run failed"),
                 work_item_id=wi,
                 run_id=run_id,
+                caused_by_type="run",
+                caused_by_id=run_id,
                 actor_role=row["role"],
                 severity=Severity.INFO if ok else Severity.WARN,
                 payload={
@@ -123,11 +152,18 @@ def insert_run_step(
     step_kind: str,
     payload_obj: dict,
     summary: str | None = None,
+    agent_version: str | None = None,
 ) -> None:
+    resolved_agent_version = agent_version
+    if resolved_agent_version is None:
+        row = conn.execute("SELECT agent_version FROM runs WHERE id = ?", (run_id,)).fetchone()
+        resolved_agent_version = row["agent_version"] if row else None
     conn.execute(
         """
-        INSERT OR IGNORE INTO run_steps (id, run_id, step_no, step_kind, status, summary, payload)
-        VALUES (?, ?, ?, ?, 'completed', ?, ?)
+        INSERT OR IGNORE INTO run_steps (
+            id, run_id, step_no, step_kind, status, summary, payload, input_hash, agent_version
+        )
+        VALUES (?, ?, ?, ?, 'completed', ?, ?, ?, ?)
         """,
         (
             gen_id("rs"),
@@ -136,6 +172,8 @@ def insert_run_step(
             step_kind,
             summary or "",
             json.dumps(payload_obj, ensure_ascii=False),
+            payload_hash(payload_obj),
+            resolved_agent_version,
         ),
     )
 

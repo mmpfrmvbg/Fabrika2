@@ -29,6 +29,7 @@ def run_architect(orchestrator: Orchestrator, item: dict) -> None:
         role=Role.ARCHITECT,
         run_type=RunType.ANALYZE,
         account_id=account["account_id"],
+        input_payload={"work_item_id": wi_id, "queue_item": dict(item)},
     )
 
     logger.log(
@@ -38,6 +39,8 @@ def run_architect(orchestrator: Orchestrator, item: dict) -> None:
         "Run started (architect)",
         work_item_id=wi_id,
         run_id=run_id,
+        caused_by_type="run",
+        caused_by_id=run_id,
         actor_role=Role.ARCHITECT.value,
         account_id=account["account_id"],
     )
