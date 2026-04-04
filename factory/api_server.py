@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 from contextlib import asynccontextmanager
 import json
+import logging
 import os
 import sqlite3
 import sys
@@ -26,6 +27,7 @@ from typing import Any
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .config import load_dotenv, resolve_db_path, AccountManager
 from .composition import wire
@@ -54,6 +56,7 @@ load_dotenv()
 
 # Глобальный logger для endpoint (создаётся при первом использовании)
 _logger: FactoryLogger | None = None
+_LOG = logging.getLogger("factory.api_server")
 
 def _get_logger(conn: sqlite3.Connection | None = None) -> FactoryLogger:
     """Получить logger для endpoint."""
@@ -62,8 +65,9 @@ def _get_logger(conn: sqlite3.Connection | None = None) -> FactoryLogger:
         try:
             tmp_conn = get_connection(_db_path())
             _logger = FactoryLogger(tmp_conn)
-        except Exception:
+        except Exception as e:
             # Fallback: logger без connection
+            _LOG.debug("Falling back to FactoryLogger(None): %s", e, exc_info=True)
             _logger = FactoryLogger(None)
     return _logger
 
@@ -192,8 +196,8 @@ class _OrchestratorThread:
             if conn is not None:
                 try:
                     conn.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    _LOG.debug("Failed to close orchestrator thread db connection: %s", e, exc_info=True)
 
     def tick_once(self, *, _factory: dict | None = None) -> dict[str, int]:
         """
@@ -247,8 +251,8 @@ class _OrchestratorThread:
         if _factory is None:
             try:
                 conn.close()
-            except Exception:
-                pass
+            except Exception as e:
+                _LOG.debug("Failed to close temporary tick connection: %s", e, exc_info=True)
         return {k: v for k, v in mapped.items() if v}
 
 
@@ -265,6 +269,19 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Factory read-only API", version="1.0", lifespan=lifespan)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    _LOG.exception("Unhandled API exception for %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal Server Error",
+            "detail": str(exc) or exc.__class__.__name__,
+            "path": request.url.path,
+        },
+    )
 
 
 @app.get("/health")
@@ -986,7 +1003,8 @@ def _load_judgements_items(
     pjv.append(limit)
     try:
         jv = conn.execute(qjv, pjv).fetchall()
-    except sqlite3.OperationalError:
+    except sqlite3.OperationalError as e:
+        _LOG.debug("judge_verdicts table unavailable while loading judgements: %s", e)
         jv = []
     for r in jv:
         issues: Any = []
@@ -1002,8 +1020,8 @@ def _load_judgements_items(
         try:
             if r["failed_guards_json"]:
                 issues = json.loads(r["failed_guards_json"])
-        except (json.JSONDecodeError, TypeError):
-            pass
+        except (json.JSONDecodeError, TypeError) as e:
+            _LOG.debug("Failed to parse failed_guards_json for verdict %s: %s", r["id"], e)
         used_el = None
         if isinstance(p, dict):
             used_el = p.get("used_event_log")
@@ -1034,7 +1052,8 @@ def _load_judgements_items(
     prr.append(limit)
     try:
         rr = conn.execute(qrr, prr).fetchall()
-    except sqlite3.OperationalError:
+    except sqlite3.OperationalError as e:
+        _LOG.debug("review_results table unavailable while loading judgements: %s", e)
         rr = []
     for r in rr:
         issues = []
@@ -1146,12 +1165,13 @@ def stats() -> dict[str, Any]:
             ).fetchall()
             improvements_stats = {r["status"]: int(r["c"]) for r in rows}
             improvements_proposed = int(improvements_stats.get("proposed", 0))
-        except sqlite3.OperationalError:
-            pass
+        except sqlite3.OperationalError as e:
+            _LOG.debug("improvement_candidates table unavailable in stats: %s", e)
         orch_hb = _orchestrator_heartbeat_from_conn(conn)
         try:
             wst = workers_status_payload(conn)
-        except sqlite3.OperationalError:
+        except sqlite3.OperationalError as e:
+            _LOG.debug("workers_status_payload fallback due to sqlite operational error: %s", e)
             wst = {"active": 0, "workers": [], "leases_total": 0}
         return {
             "active_workers": int(wst.get("active") or 0),
@@ -1198,7 +1218,8 @@ def list_improvements() -> dict[str, Any]:
                 ORDER BY priority_score DESC, created_at DESC
                 """
             ).fetchall()
-        except sqlite3.OperationalError:
+        except sqlite3.OperationalError as e:
+            _LOG.debug("improvement_candidates table unavailable in list_improvements: %s", e)
             return {"candidates": [], "stats": {}}
         candidates = []
         for r in rows:
@@ -1493,8 +1514,8 @@ def create_vision(
         if conn is not None:
             try:
                 conn.close()
-            except Exception:
-                pass
+            except Exception as e:
+                _LOG.debug("Failed to close vision creation DB connection: %s", e, exc_info=True)
 
 
 # ═══════════════════════════════════════════════════════

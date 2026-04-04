@@ -7,9 +7,10 @@ import time
 import uuid
 import hashlib
 import json
+import logging
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
 
 from .config import ACCOUNTS, DB_PATH
 from .models import Role
@@ -21,6 +22,7 @@ from .schema_ddl import DDL, V_API_USAGE_TODAY_RECREATE
 _SCHEMA_VERSION = 10
 _SQLITE_TIMEOUT_SEC = 30.0
 _SQLITE_BUSY_TIMEOUT_MS = 30000
+_LOG = logging.getLogger("factory.db")
 
 # Migration v2: self-improvement candidates (idempotent CREATE TABLE IF NOT EXISTS)
 IMPROVEMENT_CANDIDATES_DDL = """
@@ -228,7 +230,7 @@ def _max_migration_version(conn: sqlite3.Connection) -> int:
         return 0
 
 
-def _api_accounts_column_names(conn) -> set[str]:
+def _api_accounts_column_names(conn: sqlite3.Connection) -> set[str]:
     return {r[1] for r in conn.execute("PRAGMA table_info(api_accounts)").fetchall()}
 
 
@@ -255,8 +257,8 @@ def _migration_forensic_tracing(conn: sqlite3.Connection) -> None:
     for stmt in alters:
         try:
             conn.execute(stmt)
-        except sqlite3.OperationalError:
-            pass
+        except sqlite3.OperationalError as e:
+            _LOG.debug("Skipping forensic migration statement %r: %s", stmt, e)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_input_hash ON runs(input_hash)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_rs_input_hash ON run_steps(input_hash)")
     conn.execute(
@@ -267,8 +269,8 @@ def _migration_forensic_tracing(conn: sqlite3.Connection) -> None:
 def _migration_runs_retry_count(conn: sqlite3.Connection) -> None:
     try:
         conn.execute("ALTER TABLE runs ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
+    except sqlite3.OperationalError as e:
+        _LOG.debug("Skipping runs.retry_count migration: %s", e)
 
 
 def _migration_runs_source_and_dry_run(conn: sqlite3.Connection) -> None:
@@ -279,19 +281,21 @@ def _migration_runs_source_and_dry_run(conn: sqlite3.Connection) -> None:
     for stmt in alters:
         try:
             conn.execute(stmt)
-        except sqlite3.OperationalError:
-            pass
+        except sqlite3.OperationalError as e:
+            _LOG.debug("Skipping runs source/dry_run migration statement %r: %s", stmt, e)
 
 
 def _migration_work_items_last_heartbeat(conn: sqlite3.Connection) -> None:
     try:
         conn.execute("ALTER TABLE work_items ADD COLUMN last_heartbeat_at TIMESTAMP")
-    except sqlite3.OperationalError:
-        pass
+    except sqlite3.OperationalError as e:
+        _LOG.debug("Skipping work_items.last_heartbeat_at migration: %s", e)
 
 
 @contextmanager
-def _advisory_file_lock(path: Path, *, timeout_sec: float = 60.0, poll_sec: float = 0.05):
+def _advisory_file_lock(
+    path: Path, *, timeout_sec: float = 60.0, poll_sec: float = 0.05
+) -> Generator[None, None, None]:
     """
     Advisory межпроцессный lock через отдельный файл.
     Нужен, чтобы не выполнять DDL/migrations конкурентно (SQLite executescript берёт exclusive lock).
@@ -336,9 +340,9 @@ def _advisory_file_lock(path: Path, *, timeout_sec: float = 60.0, poll_sec: floa
                 fh.seek(0)
                 try:
                     msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
-                except PermissionError:
+                except PermissionError as e:
                     # On some Windows setups, unlocking may raise if the region is already unlocked.
-                    pass
+                    _LOG.debug("Ignoring Windows file unlock permission error: %s", e)
             else:
                 import fcntl
 
@@ -346,8 +350,8 @@ def _advisory_file_lock(path: Path, *, timeout_sec: float = 60.0, poll_sec: floa
         finally:
             try:
                 fh.close()
-            except Exception:
-                pass
+            except Exception as e:
+                _LOG.debug("Failed to close advisory lock file handle: %s", e)
 
 
 def ensure_schema(db_path: Path = DB_PATH) -> None:
@@ -367,8 +371,8 @@ def ensure_schema(db_path: Path = DB_PATH) -> None:
                 return
         finally:
             conn0.close()
-    except sqlite3.OperationalError:
-        pass
+    except sqlite3.OperationalError as e:
+        _LOG.debug("Skipping initial schema check due to sqlite operational error: %s", e)
 
     lock_path = Path(str(db_path) + ".migrate.lock")
     with _advisory_file_lock(lock_path):
@@ -473,7 +477,7 @@ def resolve_effective_run_id(conn: sqlite3.Connection, run_id: str | None) -> st
     return row["effective_run_id"] or run_id
 
 
-def migrate_schema(conn) -> None:
+def migrate_schema(conn: sqlite3.Connection) -> None:
     """Добавляет колонки к существующей api_accounts и пересоздаёт v_api_usage_today."""
     conn.execute(
         """
@@ -599,17 +603,18 @@ def get_connection(db_path: Path | str = DB_PATH, *, read_only: bool = False) ->
     # Явный checkpoint при подключении для разблокировки после сбоев
     try:
         conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
-    except sqlite3.OperationalError:
-        pass  # Игнорируем, если БД заблокирована другим процессом
+    except sqlite3.OperationalError as e:
+        _LOG.debug("Skipping wal_checkpoint(PASSIVE): %s", e)
     return conn
 
 
 @contextmanager
-def transaction(conn: sqlite3.Connection):
+def transaction(conn: sqlite3.Connection) -> Generator[sqlite3.Connection, None, None]:
     try:
         yield conn
         conn.commit()
-    except Exception:
+    except Exception as e:
+        _LOG.debug("Transaction rollback due to exception: %s", e, exc_info=True)
         conn.rollback()
         raise
 

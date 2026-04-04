@@ -3,22 +3,23 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import Any
 
 from ..db import transaction
 from ..models import EventType, Severity
 
 
 def apply_rule(
-    sm,
+    sm: Any,
     *,
     wi_id: str,
     wi: sqlite3.Row,
-    rule: dict,
+    rule: dict[str, Any],
     event_name: str,
     actor_role: str | None,
     actor_id: str | None,
     run_id: str | None,
-    extra_context: dict | None,
+    extra_context: dict[str, Any] | None,
 ) -> tuple[bool, str]:
     """Apply an already selected transition rule in a single transaction."""
     old_status = wi["status"]
@@ -113,6 +114,6 @@ def apply_rule(
     return True, f"{old_status} -> {new_status}"
 
 
-def handle_with_selected_rule(sm, **kwargs) -> tuple[bool, str]:
+def handle_with_selected_rule(sm: Any, **kwargs: Any) -> tuple[bool, str]:
     """Default phase behavior: apply a selected transition rule."""
     return apply_rule(sm, **kwargs)
