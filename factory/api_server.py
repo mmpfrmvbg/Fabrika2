@@ -43,6 +43,7 @@ from .config import (
 from .composition import wire
 from .dashboard_api import _agents, _fsm_stub
 from .dashboard_live_read import api_forge_inbox_simple
+from .dashboard_api_read import get_work_items_paginated
 from .dashboard_unified_journal import JournalFilters, api_journal_query
 from .analytics_api import compute_analytics
 from .workers_status import workers_status_payload
@@ -602,22 +603,17 @@ def orchestrator_tick(_: None = Depends(require_api_key)) -> dict[str, Any]:
 def list_work_items(
     status: str | None = None,
     parent_id: str | None = None,
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     conn = _open_ro()
     try:
-        q = (
-            "SELECT id, kind, parent_id, title, status, created_at FROM work_items WHERE 1=1"
+        return get_work_items_paginated(
+            conn,
+            limit=limit,
+            offset=offset,
+            filters={"status": status, "parent_id": parent_id},
         )
-        params: list[Any] = []
-        if status:
-            q += " AND status = ?"
-            params.append(status)
-        if parent_id is not None:
-            q += " AND parent_id = ?"
-            params.append(parent_id if parent_id != "" else None)
-        q += " ORDER BY created_at DESC"
-        cur = conn.execute(q, params)
-        return {"items": _rows(cur.fetchall())}
     finally:
         conn.close()
 
