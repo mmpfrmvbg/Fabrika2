@@ -15,7 +15,7 @@ from ..contracts.review import (
     validate_review_fsm_alignment,
     validate_subject_run_alignment,
 )
-from ..db import gen_id
+from ..db import gen_id, resolve_effective_run_id
 from ..models import (
     CheckType,
     DecisionVerdict,
@@ -114,10 +114,16 @@ _REVIEWER_PROMPT_V1 = _read_reviewer_prompt_template()
 
 
 def _build_reviewer_prompt(
-    *, wi: dict, files_block: str, diff_block: str, snapshot_block: str, history_block: str
+    *,
+    wi: dict,
+    files_block: str,
+    diff_block: str,
+    run_steps_block: str,
+    snapshot_block: str,
+    history_block: str,
 ) -> str:
     tpl = _REVIEWER_PROMPT_V1 or ""
-    return tpl.format(
+    base = tpl.format(
         kind=wi.get("kind") or "",
         title=(wi.get("title") or "").strip(),
         description=(wi.get("description") or "").strip(),
@@ -126,6 +132,7 @@ def _build_reviewer_prompt(
         snapshot_block=snapshot_block,
         history_block=history_block,
     ).strip()
+    return (base + "\n\nForge run steps\n" + run_steps_block.strip() + "\n").strip()
 
 
 def _fetch_workspace_snapshots_block(conn, wi_id: str) -> str:
@@ -280,6 +287,29 @@ def _fetch_diff_block(conn, wi_id: str, subject_run_id: str | None) -> str:
     if len(out) > 30000:
         out = out[:30000] + "\n... [diff truncated] ...\n"
     return out
+
+
+def _fetch_run_steps_block(conn, subject_run_id: str | None) -> str:
+    if not subject_run_id:
+        return "(no forge run_steps for this run)\n"
+    rows = conn.execute(
+        """
+        SELECT step_no, step_kind, status, summary
+        FROM run_steps
+        WHERE run_id = ?
+        ORDER BY step_no
+        LIMIT 30
+        """,
+        (subject_run_id,),
+    ).fetchall()
+    if not rows:
+        return "(no captured run_steps for this run)\n"
+    lines: list[str] = []
+    for r in rows:
+        lines.append(
+            f"- #{int(r['step_no'])} {r['step_kind']} [{r['status']}] {(r['summary'] or '').strip()[:200]}"
+        )
+    return "\n".join(lines) + "\n"
 
 
 def _fetch_review_history_block(conn, wi_id: str, *, limit: int = 3) -> str:
@@ -475,6 +505,7 @@ def run_review(orchestrator: Orchestrator, item: dict) -> None:
             )
 
     latest_impl = _latest_implement_run_id(conn, wi_id)
+    effective_impl = resolve_effective_run_id(conn, latest_impl)
     subject_for_json = latest_impl if latest_impl is not None else f"seed:{wi_id}"
 
     raw_text = ""
@@ -493,13 +524,15 @@ def run_review(orchestrator: Orchestrator, item: dict) -> None:
             raw_text = '{"broken":'
     else:
         files_block = _fetch_files_block(conn, wi_id)
-        diff_block = _fetch_diff_block(conn, wi_id, latest_impl)
+        diff_block = _fetch_diff_block(conn, wi_id, effective_impl)
+        run_steps_block = _fetch_run_steps_block(conn, effective_impl)
         history_block = _fetch_review_history_block(conn, wi_id)
         snapshot_block = _fetch_workspace_snapshots_block(conn, wi_id)
         prompt = _build_reviewer_prompt(
             wi=dict(wi),
             files_block=files_block,
             diff_block=diff_block,
+            run_steps_block=run_steps_block,
             snapshot_block=snapshot_block,
             history_block=history_block,
         )
@@ -629,7 +662,7 @@ def run_review(orchestrator: Orchestrator, item: dict) -> None:
         work_item_id=wi_id,
         run_id=run_id,
         actor_role=Role.REVIEWER.value,
-        payload=result.model_dump(),
+        payload={**result.model_dump(), "effective_subject_run_id": effective_impl},
         tags=["review", "review_result"],
     )
 
