@@ -4,10 +4,10 @@ import sqlite3
 from typing import Optional
 
 from .actions import Actions
-from .db import transaction
 from .guards import Guards
 from .logging import FactoryLogger
 from .models import EventType, Role, Severity, WorkItemStatus
+from .phases import resolve_handler
 
 
 class StateMachine:
@@ -141,91 +141,18 @@ class StateMachine:
             )
             return False, f"No valid transition for {event_name} from {old_status}"
 
-        new_status = rule["to_state"]
-        if isinstance(new_status, str) and new_status.startswith("{") and new_status.endswith("}"):
-            field = new_status[1:-1]
-            w = dict(wi)
-            new_status = w.get(field) or "planned"
-
-        new_owner = self._resolve_owner(new_status, wi)
-
-        ctx = {
-            "run_id": run_id,
-            "old_status": old_status,
-            "new_status": new_status,
-            "event_name": event_name,
-            "actor_role": actor_role,
-            "actor_id": actor_id,
-            **(extra_context or {}),
-        }
-
-        with transaction(self.conn):
-            self.conn.execute(
-                """
-                UPDATE work_items
-                SET status = ?, owner_role = ?, previous_status = ?
-                WHERE id = ?
-                """,
-                (new_status, new_owner, old_status, wi_id),
-            )
-
-            self.logger.log(
-                EventType.TASK_STATUS_CHANGED,
-                "work_item",
-                wi_id,
-                f"{old_status} -> {new_status} via {event_name}",
-                work_item_id=wi_id,
-                run_id=run_id,
-                actor_role=actor_role,
-                actor_id=actor_id,
-                payload={
-                    "from_state": old_status,
-                    "to_state": new_status,
-                    "event": event_name,
-                    "guard": self._norm_guard(rule.get("guard_name")),
-                    "action": rule.get("action_name") or "",
-                },
-                tags=["fsm", event_name],
-            )
-            if event_name == "forge_started":
-                self.logger.log(
-                    EventType.FORGE_STARTED,
-                    "work_item",
-                    wi_id,
-                    "Forge started",
-                    work_item_id=wi_id,
-                    run_id=run_id,
-                    actor_role=actor_role,
-                )
-            elif event_name == "forge_completed":
-                self.logger.log(
-                    EventType.FORGE_COMPLETED,
-                    "work_item",
-                    wi_id,
-                    "Forge completed",
-                    work_item_id=wi_id,
-                    run_id=run_id,
-                    actor_role=actor_role,
-                )
-            elif event_name == "forge_failed":
-                self.logger.log(
-                    EventType.FORGE_FAILED,
-                    "work_item",
-                    wi_id,
-                    "Forge failed",
-                    work_item_id=wi_id,
-                    run_id=run_id,
-                    actor_role=actor_role,
-                )
-
-            aname = rule.get("action_name") or ""
-            if aname:
-                action_names = [a.strip() for a in aname.split(";") if a.strip()]
-                for action_name in action_names:
-                    action_fn = self.actions.resolve(action_name)
-                    action_fn(wi_id, **ctx)
-
-        return True, f"{old_status} -> {new_status}"
+        phase_handler = resolve_handler(event_name)
+        return phase_handler(
+            self,
+            wi_id=wi_id,
+            wi=wi,
+            rule=rule,
+            event_name=event_name,
+            actor_role=actor_role,
+            actor_id=actor_id,
+            run_id=run_id,
+            extra_context=extra_context,
+        )
 
 
 def find_matching_transition(
