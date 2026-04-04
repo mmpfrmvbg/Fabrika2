@@ -28,6 +28,7 @@ E2E №2: БД ``factory_e2e_two_atoms.db``. E2E №3: временная БД, 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import tempfile
@@ -49,6 +50,8 @@ from .work_items import WorkItemOps
 
 DEFAULT_MANUAL_DB = Path(__file__).resolve().parent.parent / "factory_e2e_manual.db"
 DEFAULT_TWO_ATOMS_DB = Path(__file__).resolve().parent.parent / "factory_e2e_two_atoms.db"
+
+_LOG = logging.getLogger(__name__)
 
 
 def _unlink_quiet(p: Path) -> None:
@@ -428,7 +431,7 @@ def run_e2e_forge_qwen_dry() -> str:
             )
         finally:
             conn.close()
-        print(f"E2E forge qwen dry: atom_id={atom_id} (temp db removed)")
+        _LOG.info(f"E2E forge qwen dry: atom_id={atom_id} (temp db removed)")
         return atom_id
     finally:
         _unlink_quiet(p)
@@ -695,7 +698,7 @@ def run_e2e_live() -> str:
                 raise AssertionError("ожидались file_changes после forge (dry-run placeholder)")
         finally:
             conn.close()
-        print(f"E2E live: atom_id={atom_id}")
+        _LOG.info(f"E2E live: atom_id={atom_id}")
         return atom_id
     finally:
         _unlink_quiet(p)
@@ -757,7 +760,7 @@ def run_e2e_qwen_wet_edit() -> str:
         assert_qwen_wet_edit_hello_artifacts(conn, atom_id)
 
         print_trace_summary(conn, atom_id)
-        print(f"E2E qwen-wet-edit: atom_id={atom_id} db={p.resolve()}")
+        _LOG.info(f"E2E qwen-wet-edit: atom_id={atom_id} db={p.resolve()}")
         return atom_id
     finally:
         if not use_env_db:
@@ -854,8 +857,8 @@ def run_e2e_planner() -> str:
             )
 
         _assert_planner_e2e_structure(conn, vid)
-        print(render_vision_tree(conn, vid))
-        print(
+        _LOG.info(render_vision_tree(conn, vid))
+        _LOG.info(
             f"E2E planner: vision_id={vid} db={p.resolve()} "
             f"epics={summary['epics']} stories={summary['stories']} "
             f"tasks={summary['tasks']} atoms={summary['atoms']}"
@@ -943,8 +946,8 @@ def run_e2e_planner_forge() -> str:
         assert_qwen_wet_edit_hello_artifacts(conn, atom_id)
 
         tree = render_vision_tree(conn, vid)
-        print(tree)
-        print(
+        _LOG.info(tree)
+        _LOG.info(
             f"E2E planner+forge: vision_id={vid} atom_id={atom_id} "
             f"atom_status={ast} forge_implement_run_status={rst} db={p.resolve()}"
         )
@@ -1008,7 +1011,7 @@ def run_e2e_qwen_wet_failover() -> str:
         assert_qwen_wet_edit_hello_artifacts(conn, atom_id)
 
         print_trace_summary(conn, atom_id)
-        print(f"E2E qwen-wet-failover: atom_id={atom_id} db={p.resolve()}")
+        _LOG.info(f"E2E qwen-wet-failover: atom_id={atom_id} db={p.resolve()}")
         return atom_id
     finally:
         if prev_rl is None:
@@ -1057,7 +1060,7 @@ def run_e2e_qwen_wet_forge_no_artifact() -> str:
         assert_qwen_wet_forge_no_artifact_failure(conn, atom_id)
 
         print_trace_summary(conn, atom_id)
-        print(f"E2E qwen-wet-forge-no-artifact: atom_id={atom_id} db={p.resolve()}")
+        _LOG.info(f"E2E qwen-wet-forge-no-artifact: atom_id={atom_id} db={p.resolve()}")
         return atom_id
     finally:
         if prev_na is None:
@@ -1073,7 +1076,7 @@ def assert_trace_integrity(conn, atom_id: str) -> None:
 
 
 def print_trace_summary(conn, atom_id: str) -> None:
-    print("\n=== TRACE SUMMARY (atom_id=%s) ===" % atom_id)
+    _LOG.info("\n=== TRACE SUMMARY (atom_id=%s) ===" % atom_id)
 
     ev = conn.execute(
         """
@@ -1082,7 +1085,7 @@ def print_trace_summary(conn, atom_id: str) -> None:
         """,
         (atom_id, atom_id),
     ).fetchone()["c"]
-    print(f"  event_log rows (wi_id or entity_id): {ev}")
+    _LOG.info(f"  event_log rows (wi_id or entity_id): {ev}")
 
     runs = conn.execute(
         """
@@ -1091,9 +1094,9 @@ def print_trace_summary(conn, atom_id: str) -> None:
         """,
         (atom_id,),
     ).fetchall()
-    print(f"  runs: {len(runs)}")
+    _LOG.info(f"  runs: {len(runs)}")
     for r in runs:
-        print(f"    - {r['id'][:20]}... role={r['role']} type={r['run_type']} status={r['status']}")
+        _LOG.info(f"    - {r['id'][:20]}... role={r['role']} type={r['run_type']} status={r['status']}")
 
     run_ids = [r["id"] for r in runs]
     if run_ids:
@@ -1102,34 +1105,34 @@ def print_trace_summary(conn, atom_id: str) -> None:
             f"SELECT COUNT(*) AS c FROM run_steps WHERE run_id IN ({ph})",
             run_ids,
         ).fetchone()["c"]
-        print(f"  run_steps (for those runs): {rs}")
+        _LOG.info(f"  run_steps (for those runs): {rs}")
 
         rc = conn.execute(
             f"SELECT COUNT(*) AS c FROM review_checks WHERE run_id IN ({ph})",
             run_ids,
         ).fetchone()["c"]
-        print(f"  review_checks: {rc}")
+        _LOG.info(f"  review_checks: {rc}")
 
     fc = conn.execute(
         "SELECT COUNT(*) AS c FROM file_changes WHERE work_item_id = ?",
         (atom_id,),
     ).fetchone()["c"]
-    print(f"  file_changes: {fc}")
+    _LOG.info(f"  file_changes: {fc}")
 
     q = conn.execute(
         "SELECT queue_name, lease_owner FROM work_item_queue WHERE work_item_id = ?",
         (atom_id,),
     ).fetchall()
-    print(f"  work_item_queue rows: {len(q)}")
+    _LOG.info(f"  work_item_queue rows: {len(q)}")
     for row in q:
-        print(f"    - {row['queue_name']} lease={row['lease_owner']}")
+        _LOG.info(f"    - {row['queue_name']} lease={row['lease_owner']}")
 
     st = conn.execute(
         "SELECT status FROM work_items WHERE id = ?",
         (atom_id,),
     ).fetchone()
-    print(f"  work_items.status: {st['status'] if st else 'MISSING'}")
-    print("=== END TRACE ===\n")
+    _LOG.info(f"  work_items.status: {st['status'] if st else 'MISSING'}")
+    _LOG.info("=== END TRACE ===\n")
 
 
 def run_manual_e2e(
@@ -1244,8 +1247,8 @@ def run_manual_e2e(
         assert_forge_qwen_runner_step(conn, atom_id)
         assert_happy_atom(conn, atom_id, check_events=True)
         print_trace_summary(conn, atom_id)
-        print(f"DB file (inspect): {path.resolve()}")
-        print(f"atom_id: {atom_id}")
+        _LOG.info(f"DB file (inspect): {path.resolve()}")
+        _LOG.info(f"atom_id: {atom_id}")
         return atom_id
     finally:
         if override_qwen_dry:
@@ -1450,7 +1453,7 @@ def run_manual_e2e_two_atoms(db_path: Path | None = None) -> tuple[str, str, str
             "SELECT status FROM work_items WHERE id = ?",
             (epic_id,),
         ).fetchone()["status"]
-        print(
+        _LOG.info(
             f"epic_id={epic_id} epic.status={epic_st} "
             f"atom_ok={atom_ok} atom_bad={atom_bad}"
         )
@@ -1458,7 +1461,7 @@ def run_manual_e2e_two_atoms(db_path: Path | None = None) -> tuple[str, str, str
         assert_epic_mixed(conn, epic_id, atom_ok, atom_bad, check_events=True)
         print_trace_summary(conn, atom_ok)
         print_trace_summary(conn, atom_bad)
-        print(f"DB file (inspect): {path.resolve()}")
+        _LOG.info(f"DB file (inspect): {path.resolve()}")
         return epic_id, atom_ok, atom_bad
     finally:
         if _prev_dry is None:

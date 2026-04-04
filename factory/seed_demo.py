@@ -14,6 +14,7 @@ Raw SQL: ``architect_comments``; ``UPDATE metadata`` у Vision.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from .models import EventType, Role, Severity
 from .work_items import WorkItemOps
 
 SEED_MARKER = "factory_os_live_v1"
+_LOG = logging.getLogger(__name__)
 
 VISION_TITLE = "Factory OS - операционная система фабрики"
 VISION_DESC = (
@@ -83,7 +85,7 @@ def run_seed_demo(db_path: Path | None = None) -> None:
     logger = factory["logger"]
 
     if _seed_already_applied(conn):
-        print(f"seed-demo: already applied ({SEED_MARKER}). Skip.")
+        _LOG.info("seed-demo: already applied (%s). Skip.", SEED_MARKER)
         return
 
     now = _now()
@@ -266,7 +268,7 @@ def run_seed_demo(db_path: Path | None = None) -> None:
     )
     conn.commit()
 
-    print(
+    _LOG.info(
         "seed-demo: OK - "
         f"{VISION_TITLE} -> 1 Epic -> 2 Story -> 7 atoms "
         f"({n_ready} ready_for_work+forge_inbox, {len(atom_ids) - n_ready} draft); "

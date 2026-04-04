@@ -6,6 +6,9 @@ from pathlib import Path
 
 from .config import resolve_db_path
 from .composition import wire
+from .logging_config import configure_logging
+
+_LOG = logging.getLogger(__name__)
 
 
 def _flag_value(rest: list[str], flag: str) -> str | None:
@@ -22,15 +25,13 @@ def _flag_value(rest: list[str], flag: str) -> str | None:
 
 def cli_status(conn):
     """Печатает текущий статус фабрики."""
-    print("\n" + "=" * 60)
-    print("  FACTORY STATUS")
-    print("=" * 60)
+    _LOG.info("\n%s\n  FACTORY STATUS\n%s", "=" * 60, "=" * 60)
 
     states = conn.execute("SELECT * FROM system_state").fetchall()
     for s in states:
-        print(f"  {s['key']:.<30} {s['value']}")
+        _LOG.info("  %s %s", f"{s['key']:.<30}", s["value"])
 
-    print("\n  API ACCOUNTS:")
+    _LOG.info("\n  API ACCOUNTS:")
     accounts = conn.execute("SELECT * FROM v_api_usage_today").fetchall()
     for a in accounts:
         bar_len = 20
@@ -45,9 +46,9 @@ def cli_status(conn):
             status_icon = "CD"
         else:
             status_icon = "XX"
-        print(f"    {status_icon} {a['account_name']:8} [{bar}] {used}/{limit}")
+        _LOG.info("    %s %8s [%s] %s/%s", status_icon, a["account_name"], bar, used, limit)
 
-    print("\n  WORK ITEMS:")
+    _LOG.info("\n  WORK ITEMS:")
     stats = conn.execute(
         """
         SELECT status, COUNT(*) AS cnt
@@ -57,9 +58,9 @@ def cli_status(conn):
         """
     ).fetchall()
     for s in stats:
-        print(f"    {s['status']:.<25} {s['cnt']}")
+        _LOG.info("    %s %s", f"{s['status']:.<25}", s["cnt"])
 
-    print("\n  QUEUES:")
+    _LOG.info("\n  QUEUES:")
     queues = conn.execute(
         """
         SELECT queue_name, COUNT(*) AS cnt,
@@ -69,23 +70,20 @@ def cli_status(conn):
         """
     ).fetchall()
     for q in queues:
-        print(f"    {q['queue_name']:.<25} {q['cnt']} (leased: {q['leased']})")
+        _LOG.info("    %s %s (leased: %s)", f"{q['queue_name']:.<25}", q["cnt"], q["leased"])
 
     active = conn.execute("SELECT COUNT(*) AS c FROM v_active_runs").fetchone()["c"]
-    print(f"\n  Active runs: {active}")
+    _LOG.info("\n  Active runs: %s", active)
 
     errors = conn.execute("SELECT COUNT(*) AS c FROM v_recent_errors").fetchone()["c"]
-    print(f"  Errors (last hour): {errors}")
+    _LOG.info("  Errors (last hour): %s", errors)
 
-    print("=" * 60 + "\n")
+    _LOG.info("%s\n", "=" * 60)
 
 
 def main(argv: list[str] | None = None) -> None:
     argv = argv if argv is not None else sys.argv[1:]
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
+    configure_logging(level=logging.INFO)
 
     if argv and not argv[0].startswith("--"):
         db = resolve_db_path(Path(argv[0]))
@@ -99,11 +97,11 @@ def main(argv: list[str] | None = None) -> None:
 
         title = _flag_value(rest, "--title")
         if not title:
-            print("Ошибка: укажите --title \"...\"", file=sys.stderr)
+            _LOG.error("Ошибка: укажите --title \"...\"")
             sys.exit(2)
         desc = _flag_value(rest, "--description") or ""
         vid = run_create_vision(db, title, desc or None)
-        print(f"Vision {vid} created")
+        _LOG.info("Vision %s created", vid)
         return
 
     if "--plan" in rest:
@@ -111,7 +109,7 @@ def main(argv: list[str] | None = None) -> None:
 
         vid = _flag_value(rest, "--vision-id")
         if not vid:
-            print("Ошибка: укажите --vision-id <id>", file=sys.stderr)
+            _LOG.error("Ошибка: укажите --vision-id <id>")
             sys.exit(2)
         rc = run_plan_command(db, vid.strip())
         sys.exit(rc)
@@ -120,14 +118,14 @@ def main(argv: list[str] | None = None) -> None:
         from .e2e_manual_trace import run_e2e_planner
 
         run_e2e_planner()
-        print("E2E OK: planner (prompt -> LLM -> parse -> work_items + work_item_files)")
+        _LOG.info("E2E OK: planner (prompt -> LLM -> parse -> work_items + work_item_files)")
         return
 
     if "--e2e-planner-forge" in rest:
         from .e2e_manual_trace import run_e2e_planner_forge
 
         run_e2e_planner_forge()
-        print(
+        _LOG.info(
             "E2E OK: planner + forge (decompose_vision → mark ready → run-next-atom path)"
         )
         return
@@ -138,12 +136,12 @@ def main(argv: list[str] | None = None) -> None:
         vision = _flag_value(rest, "--vision")
         title = _flag_value(rest, "--title")
         if not vision or not title:
-            print("Ошибка: нужны --vision <id> и --title \"...\"", file=sys.stderr)
+            _LOG.error("Ошибка: нужны --vision <id> и --title \"...\"")
             sys.exit(2)
         desc = _flag_value(rest, "--description") or ""
         files = _flag_value(rest, "--files")
         if not files:
-            print("Ошибка: укажите --files path1,path2", file=sys.stderr)
+            _LOG.error("Ошибка: укажите --files path1,path2")
             sys.exit(2)
         fintent = _flag_value(rest, "--file-intent") or "modify"
         try:
@@ -156,9 +154,9 @@ def main(argv: list[str] | None = None) -> None:
                 file_intent=fintent,
             )
         except Exception as e:
-            print(str(e), file=sys.stderr)
+            _LOG.error("%s", e)
             sys.exit(1)
-        print(aid)
+        _LOG.info("%s", aid)
         return
 
     if "--seed-demo" in rest:
@@ -178,7 +176,7 @@ def main(argv: list[str] | None = None) -> None:
 
         aid = _flag_value(rest, "--atom-id")
         if not aid:
-            print("Ошибка: укажите --atom-id <id>", file=sys.stderr)
+            _LOG.error("Ошибка: укажите --atom-id <id>")
             sys.exit(2)
         f = wire(db)
         mark_atom_ready_for_forge(
@@ -187,7 +185,7 @@ def main(argv: list[str] | None = None) -> None:
             aid.strip(),
             orchestrator=f["orchestrator"],
         )
-        print(f"Atom {aid.strip()}: ready_for_work + forge_inbox (FSM + judge run)")
+        _LOG.info("Atom %s: ready_for_work + forge_inbox (FSM + judge run)", aid.strip())
         return
 
     if "--run-next-atom" in rest:
@@ -198,9 +196,9 @@ def main(argv: list[str] | None = None) -> None:
         f = wire(db)
         atom_id, ast, rst = execute_run_next_atom(f)
         if not atom_id:
-            print("Нет атомов, готовых к forge")
+            _LOG.info("Нет атомов, готовых к forge")
             return
-        print(
+        _LOG.info(
             f"run-next-atom: atom_id={atom_id} atom_status={ast} "
             f"forge_implement_run_status={rst}"
         )
@@ -216,35 +214,35 @@ def main(argv: list[str] | None = None) -> None:
         from .e2e_golden import run_e2e_review_to_done
 
         run_e2e_review_to_done()
-        print("E2E OK: review_to_done (temp DB)")
+        _LOG.info("E2E OK: review_to_done (temp DB)")
         return
 
     if "--e2e-chain" in rest:
         from .e2e_golden import run_e2e_chain_judge_forge_review_done
 
         run_e2e_chain_judge_forge_review_done()
-        print("E2E OK: chain judge -> forge -> review -> done (temp DB)")
+        _LOG.info("E2E OK: chain judge -> forge -> review -> done (temp DB)")
         return
 
     if "--e2e-manual" in rest:
         from .e2e_manual_trace import run_manual_e2e
 
         run_manual_e2e()
-        print("E2E OK: manual tiny vision -> atom -> judge -> forge -> review -> done")
+        _LOG.info("E2E OK: manual tiny vision -> atom -> judge -> forge -> review -> done")
         return
 
     if "--e2e-two-atoms" in rest:
         from .e2e_manual_trace import run_manual_e2e_two_atoms
 
         run_manual_e2e_two_atoms()
-        print("E2E OK: epic + atom_ok (done) + atom_bad (review_rejected)")
+        _LOG.info("E2E OK: epic + atom_ok (done) + atom_bad (review_rejected)")
         return
 
     if "--e2e-qwen-dry" in rest or "--e2e-forge-qwen-dry" in rest:
         from .e2e_manual_trace import run_e2e_forge_qwen_dry
 
         run_e2e_forge_qwen_dry()
-        print(
+        _LOG.info(
             "E2E OK: qwen dry (forge -> run_qwen_cli -> forge_completed -> review -> done)"
         )
         return
@@ -253,7 +251,7 @@ def main(argv: list[str] | None = None) -> None:
         from .e2e_manual_trace import run_e2e_live
 
         run_e2e_live()
-        print(
+        _LOG.info(
             "E2E OK: live (forge_worker prompt/llm_reply + DRY_RUN + forge.completed + done)"
         )
         return
@@ -262,7 +260,7 @@ def main(argv: list[str] | None = None) -> None:
         from .e2e_manual_trace import run_e2e_qwen_wet_edit
 
         run_e2e_qwen_wet_edit()
-        print(
+        _LOG.info(
             "E2E OK: qwen wet edit (hello_qwen.py file_changes + file_write, DRY_RUN=0)"
         )
         return
@@ -271,7 +269,7 @@ def main(argv: list[str] | None = None) -> None:
         from .e2e_manual_trace import run_e2e_qwen_wet_failover
 
         run_e2e_qwen_wet_failover()
-        print(
+        _LOG.info(
             "E2E OK: qwen wet failover (rate-limit sim + second account, hello_qwen artifacts)"
         )
         return
@@ -280,7 +278,7 @@ def main(argv: list[str] | None = None) -> None:
         from .e2e_manual_trace import run_e2e_qwen_wet_forge_no_artifact
 
         run_e2e_qwen_wet_forge_no_artifact()
-        print(
+        _LOG.info(
             "E2E OK: qwen wet forge no artifact (forge_failed, run.failed.forge_no_artifact)"
         )
         return
@@ -327,7 +325,7 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     factory = wire(db)
-    print(f"Factory initialized: {db}")
+    _LOG.info("Factory initialized: %s", db)
     cli_status(factory["conn"])
 
     if "--demo" in rest:
@@ -338,20 +336,20 @@ def main(argv: list[str] | None = None) -> None:
             "Мобильное приложение для чат-бота",
             "React Native приложение с бекендом на FastAPI",
         )
-        print(f"Created vision: {vid}")
+        _LOG.info("Created vision: %s", vid)
 
         ok, msg = sm.apply_transition(vid, "creator_submitted", actor_role="creator")
-        print(f"Submitted: {ok} - {msg}")
+        _LOG.info("Submitted: %s - %s", ok, msg)
 
         cli_status(factory["conn"])
 
     if "--run" in rest:
-        print("Starting orchestrator... (Ctrl+C to stop)")
+        _LOG.info("Starting orchestrator... (Ctrl+C to stop)")
         try:
             factory["orchestrator"].start()
         except KeyboardInterrupt:
             factory["orchestrator"].stop()
-            print("\nOrchestrator stopped.")
+            _LOG.info("\nOrchestrator stopped.")
 
 
 if __name__ == "__main__":

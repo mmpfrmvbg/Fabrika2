@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import logging
 import sqlite3
 import time
 from pathlib import Path
@@ -15,6 +16,7 @@ from .composition import wire
 from .config import resolve_db_path
 from .models import EventType, Role, Severity
 
+_LOG = logging.getLogger(__name__)
 
 def factory_has_pending_dispatch(conn) -> bool:
     """Есть ли что-то, что оркестратор мог бы взять из очередей или forge ``queued``."""
@@ -103,7 +105,7 @@ def run_worker_loop(db_path: Path | None = None) -> None:
     logger = factory["logger"]
 
     poll_ms = max(50, int(os.environ.get("FACTORY_WORKER_POLL_MS", "2000")))
-    print(
+    _LOG.info(
         f"worker-loop: FACTORY_WORKSPACE_ROOT={os.environ.get('FACTORY_WORKSPACE_ROOT')} "
         f"poll={poll_ms}ms DB={p} (Ctrl+C to stop)"
     )
@@ -166,7 +168,7 @@ def run_worker_loop(db_path: Path | None = None) -> None:
             tags=["worker", "lifecycle"],
         )
         conn.commit()
-        print("worker-loop: stopped.")
+        _LOG.info("worker-loop: stopped.")
 
 
 if __name__ == "__main__":

@@ -9,11 +9,14 @@
 
 from __future__ import annotations
 
+import logging
+
 from .composition import wire
 from .config import resolve_db_path
 from .db import gen_id
 from .models import QueueName, Role, WorkItemStatus
 
+_LOG = logging.getLogger(__name__)
 
 def run_seed() -> tuple[str, str, str, str, str, str, str]:
     db = resolve_db_path()
@@ -102,14 +105,14 @@ def run_seed() -> tuple[str, str, str, str, str, str, str]:
 
 def main() -> None:
     vid, eid, sid, a1, a2, a3, a4 = run_seed()
-    print("Seed OK")
-    print("  vision:", vid)
-    print("  epic:  ", eid)
-    print("  story: ", sid)
-    print("  atom-1 (done):        ", a1)
-    print("  atom-2 (in_progress): ", a2)
-    print("  atom-3 (draft/open):  ", a3)
-    print("  atom-4 (ready_for_work, demo run): ", a4)
+    _LOG.info("Seed OK")
+    _LOG.info("  vision: %s", vid)
+    _LOG.info("  epic:   %s", eid)
+    _LOG.info("  story:  %s", sid)
+    _LOG.info("  atom-1 (done):         %s", a1)
+    _LOG.info("  atom-2 (in_progress):  %s", a2)
+    _LOG.info("  atom-3 (draft/open):   %s", a3)
+    _LOG.info("  atom-4 (ready_for_work, demo run): %s", a4)
 
 
 if __name__ == "__main__":
