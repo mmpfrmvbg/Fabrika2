@@ -27,7 +27,7 @@ import traceback
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncIterator, Awaitable, Callable, Union
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Path as FastPath, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -322,7 +322,7 @@ _orch_thread = _OrchestratorThread()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _orch_thread.start()
     try:
         yield
@@ -394,7 +394,10 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def api_key_auth_middleware(request: Request, call_next):
+async def api_key_auth_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
     if request.url.path.startswith("/api") and request.method != "OPTIONS":
         try:
             await require_api_key(request)
@@ -404,7 +407,10 @@ async def api_key_auth_middleware(request: Request, call_next):
 
 
 @app.middleware("http")
-async def request_timing_middleware(request: Request, call_next):
+async def request_timing_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
     started = time.perf_counter()
     response = await call_next(request)
     duration_ms = (time.perf_counter() - started) * 1000.0
@@ -474,7 +480,10 @@ def _rate_limit_meta(method: str, ip: str) -> dict[str, int]:
 
 
 @app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
+async def rate_limit_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
     ip = _client_ip(request)
     meta = _rate_limit_meta(request.method, ip)
     if meta["is_limited"]:
@@ -1352,7 +1361,7 @@ def list_events(
     work_item_id: str | None = None,
     event_type: str | None = None,
     stream: bool = False,
-):
+) -> Union[dict[str, Any], StreamingResponse]:
     conn = _open_ro()
     try:
         q = "SELECT * FROM event_log WHERE 1=1"
@@ -2148,7 +2157,9 @@ async def chat_qwen_create(request: Request) -> dict[str, str]:
 
 
 @app.get("/api/chat/qwen/{chat_id}/stream")
-async def chat_qwen_stream(chat_id: str = FastPath(..., min_length=1, max_length=128)):
+async def chat_qwen_stream(
+    chat_id: str = FastPath(..., min_length=1, max_length=128),
+) -> StreamingResponse:
     """SSE поток для чата с Qwen."""
     from starlette.responses import StreamingResponse
     from .db import init_db

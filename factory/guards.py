@@ -1,5 +1,7 @@
 """Guards — предикаты переходов FSM (Фаза 1)."""
 
+from typing import Callable
+
 import sqlite3
 
 from .models import RunType
@@ -258,7 +260,7 @@ class Guards:
             return False, f"Не завершены зависимости: {ids}"
         return True, "Все зависимости удовлетворены"
 
-    def resolve(self, guard_name: str):
+    def resolve(self, guard_name: str) -> Callable[[str], tuple[bool, str]]:
         if not guard_name:
             raise ValueError("Пустой guard_name")
         fn = getattr(self, guard_name, None)

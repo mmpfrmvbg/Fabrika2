@@ -82,7 +82,7 @@ class Orchestrator:
         self._running = False
         self._tick_counter = 0
 
-    def start(self):
+    def start(self) -> None:
         self._running = True
         self._set_factory_status("running")
         self.logger.log(
@@ -111,7 +111,7 @@ class Orchestrator:
                 )
             time.sleep(ORCHESTRATOR_POLL_INTERVAL)
 
-    def stop(self):
+    def stop(self) -> None:
         self._running = False
         self._set_factory_status("stopped")
         self.logger.log(
@@ -124,7 +124,7 @@ class Orchestrator:
             payload={"sub": "orchestrator_stopped"},
         )
 
-    def tick(self):
+    def tick(self) -> None:
         self._tick_counter += 1
         now = datetime.now(timezone.utc).isoformat()
         self.conn.execute(
