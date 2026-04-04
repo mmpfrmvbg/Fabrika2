@@ -38,7 +38,7 @@ def _insert_atom(conn: sqlite3.Connection, wi_id: str, *, status: str = "ready_f
     )
 
 
-def test_worker_crash_startup_recovery_requeues_and_releases_lease(wired_factory) -> None:
+def test_worker_crash_startup_recovery_clears_queue_lease_and_reenqueues_on_tick(wired_factory) -> None:
     conn = wired_factory["conn"]
     logger = FactoryLogger(conn)
 
@@ -60,8 +60,17 @@ def test_worker_crash_startup_recovery_requeues_and_releases_lease(wired_factory
     q = conn.execute("SELECT lease_owner, lease_until FROM work_item_queue WHERE work_item_id='wi_crash'").fetchone()
     assert wi["status"] == "ready_for_work"
     assert wi["previous_status"] == "running"
-    assert q["lease_owner"] is None
-    assert q["lease_until"] is None
+    # Startup recovery removes stale queue rows for crashed running work;
+    # the orchestrator re-enqueues ready atoms on the next tick.
+    assert q is None
+
+    wired_factory["orchestrator"]._auto_enqueue_ready_atoms()
+    conn.commit()
+    q_reenqueued = conn.execute("SELECT queue_name, lease_owner, lease_until FROM work_item_queue WHERE work_item_id='wi_crash'").fetchone()
+    assert q_reenqueued is not None
+    assert q_reenqueued["queue_name"] == QueueName.FORGE_INBOX.value
+    assert q_reenqueued["lease_owner"] is None
+    assert q_reenqueued["lease_until"] is None
 
 
 def test_dead_letter_exhaustion_marks_item_dead(wired_factory) -> None:
@@ -86,6 +95,7 @@ def test_dead_letter_exhaustion_marks_item_dead(wired_factory) -> None:
 
     row = conn.execute("SELECT status, dead_at FROM work_items WHERE id='wi_dead'").fetchone()
     q = conn.execute("SELECT attempts, lease_owner FROM work_item_queue WHERE work_item_id='wi_dead'").fetchone()
+    assert q is not None
     assert row["status"] == "dead"
     assert row["dead_at"] is not None
     assert q["attempts"] == 3
@@ -110,6 +120,7 @@ def test_lease_expiry_reclaims_stale_queue_lease(wired_factory) -> None:
     conn.commit()
 
     q = conn.execute("SELECT lease_owner, lease_until FROM work_item_queue WHERE work_item_id='wi_lease'").fetchone()
+    assert q is not None
     assert q["lease_owner"] is None
     assert q["lease_until"] is None
 
