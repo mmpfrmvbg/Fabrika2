@@ -193,7 +193,7 @@ class Orchestrator:
                       AND wiq.lease_owner IS NULL
                       AND wiq.available_at <= strftime('%Y-%m-%dT%H:%M:%f','now')
                       AND wiq.attempts < wiq.max_attempts
-                    ORDER BY wiq.priority ASC
+                    ORDER BY {self._queue_order_sql()}
                     LIMIT 1
                 )
                 RETURNING work_item_id
@@ -442,14 +442,14 @@ class Orchestrator:
             return
 
         items = self.conn.execute(
-            """
+            f"""
             SELECT wiq.work_item_id FROM work_item_queue wiq
             JOIN work_items wi ON wiq.work_item_id = wi.id
             WHERE wiq.queue_name = ?
               AND wiq.lease_owner IS NULL
               AND wiq.available_at <= strftime('%Y-%m-%dT%H:%M:%f','now')
               AND wiq.attempts < wiq.max_attempts
-            ORDER BY wiq.priority ASC
+            ORDER BY {self._queue_order_sql()}
             LIMIT 5
             """,
             (QueueName.REVIEW_INBOX.value,),
@@ -542,7 +542,7 @@ class Orchestrator:
             return
 
         items = self.conn.execute(
-            """
+            f"""
             SELECT wiq.*, wi.kind, wi.status, wi.title
             FROM work_item_queue wiq
             JOIN work_items wi ON wiq.work_item_id = wi.id
@@ -551,7 +551,7 @@ class Orchestrator:
               AND wiq.available_at <= strftime('%Y-%m-%dT%H:%M:%f','now')
               AND wiq.attempts < wiq.max_attempts
               AND wi.status = 'ready_for_work'
-            ORDER BY wiq.priority ASC
+            ORDER BY {self._queue_order_sql()}
             LIMIT 5
             """,
             (QueueName.FORGE_INBOX.value,),
@@ -576,6 +576,10 @@ class Orchestrator:
                     work_item_id=item["work_item_id"],
                     payload={"sub": "forge_dispatch_error"},
                 )
+
+    @staticmethod
+    def _queue_order_sql() -> str:
+        return "wiq.priority DESC, wiq.available_at ASC, wiq.rowid ASC"
 
     def _dispatch_completion(self, item: dict):
         wi_id = item["work_item_id"]

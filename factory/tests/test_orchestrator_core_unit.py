@@ -29,6 +29,36 @@ def _insert_atom_in_queue(conn, wi_id: str, queue: str) -> None:
     )
 
 
+def _insert_work_item_with_queue(
+    conn,
+    *,
+    wi_id: str,
+    queue: str,
+    status: str,
+    priority: int,
+    available_at: str,
+) -> None:
+    now = "2026-03-30T12:00:00.000000Z"
+    conn.execute(
+        """
+        INSERT INTO work_items (
+            id, parent_id, root_id, kind, title, description, status,
+            creator_role, owner_role, planning_depth, priority,
+            created_at, updated_at
+        )
+        VALUES (?, NULL, ?, 'atom', ?, '', ?, 'creator', 'forge', 1, 1, ?, ?)
+        """,
+        (wi_id, wi_id, wi_id, status, now, now),
+    )
+    conn.execute(
+        """
+        INSERT INTO work_item_queue (work_item_id, queue_name, priority, available_at, attempts, max_attempts)
+        VALUES (?, ?, ?, ?, 0, 3)
+        """,
+        (wi_id, queue, priority, available_at),
+    )
+
+
 def test_process_queue_claims_ready_item_and_runs_handler(tmp_path: Path) -> None:
     f = wire(tmp_path / "orch_claim.db")
     conn = f["conn"]
@@ -78,6 +108,121 @@ def test_process_queue_handler_error_increments_attempts_and_releases_lease(tmp_
         assert "handler failed" in (row["last_error"] or "")
         assert row["lease_owner"] is None
         assert row["lease_until"] is None
+    finally:
+        conn.close()
+
+
+def test_process_queue_prefers_higher_priority_then_earlier_available_at(tmp_path: Path) -> None:
+    f = wire(tmp_path / "orch_order_completion.db")
+    conn = f["conn"]
+    orch = f["orchestrator"]
+    seen: list[str] = []
+    try:
+        _insert_work_item_with_queue(
+            conn,
+            wi_id="wi_low",
+            queue=QueueName.COMPLETION_INBOX.value,
+            status="ready_for_work",
+            priority=1,
+            available_at="2026-03-30T11:59:00.000000Z",
+        )
+        _insert_work_item_with_queue(
+            conn,
+            wi_id="wi_high_late",
+            queue=QueueName.COMPLETION_INBOX.value,
+            status="ready_for_work",
+            priority=10,
+            available_at="2026-03-30T11:59:05.000000Z",
+        )
+        _insert_work_item_with_queue(
+            conn,
+            wi_id="wi_high_early",
+            queue=QueueName.COMPLETION_INBOX.value,
+            status="ready_for_work",
+            priority=10,
+            available_at="2026-03-30T11:59:01.000000Z",
+        )
+        conn.commit()
+
+        def _record(item: dict) -> None:
+            seen.append(item["work_item_id"])
+            conn.execute(
+                "DELETE FROM work_item_queue WHERE work_item_id = ?",
+                (item["work_item_id"],),
+            )
+
+        orch._process_queue(QueueName.COMPLETION_INBOX, _record)
+
+        assert seen == ["wi_high_early", "wi_high_late", "wi_low"]
+    finally:
+        conn.close()
+
+
+def test_forge_and_review_queues_share_priority_ordering(monkeypatch, tmp_path: Path) -> None:
+    f = wire(tmp_path / "orch_order_forge_review.db")
+    conn = f["conn"]
+    orch = f["orchestrator"]
+    forge_seen: list[str] = []
+    review_seen: list[str] = []
+    try:
+        _insert_work_item_with_queue(
+            conn,
+            wi_id="forge_low",
+            queue=QueueName.FORGE_INBOX.value,
+            status="ready_for_work",
+            priority=2,
+            available_at="2026-03-30T11:59:00.000000Z",
+        )
+        _insert_work_item_with_queue(
+            conn,
+            wi_id="forge_high",
+            queue=QueueName.FORGE_INBOX.value,
+            status="ready_for_work",
+            priority=9,
+            available_at="2026-03-30T11:59:00.000000Z",
+        )
+        _insert_work_item_with_queue(
+            conn,
+            wi_id="review_low",
+            queue=QueueName.REVIEW_INBOX.value,
+            status="in_review",
+            priority=2,
+            available_at="2026-03-30T11:59:00.000000Z",
+        )
+        _insert_work_item_with_queue(
+            conn,
+            wi_id="review_high",
+            queue=QueueName.REVIEW_INBOX.value,
+            status="in_review",
+            priority=9,
+            available_at="2026-03-30T11:59:00.000000Z",
+        )
+        conn.commit()
+
+        def _apply_transition(wi_id: str, *_args, **_kwargs):
+            forge_seen.append(wi_id)
+            return True, "ok"
+
+        monkeypatch.setattr(orch.sm, "apply_transition", _apply_transition)
+        monkeypatch.setattr(
+            "factory.orchestrator_core.forge.run_forge_queued_runs",
+            lambda _orch: None,
+        )
+
+        def _review_handler(item: dict) -> None:
+            review_seen.append(item["work_item_id"])
+            conn.execute(
+                "DELETE FROM work_item_queue WHERE work_item_id = ?",
+                (item["work_item_id"],),
+            )
+
+        monkeypatch.setattr(orch, "_dispatch_reviewer", _review_handler)
+
+        orch._dispatch_ready_atoms()
+        orch.process_review_queue()
+
+        assert forge_seen[:2] == ["forge_high", "forge_low"]
+        assert review_seen[:2] == ["review_high", "review_low"]
     finally:
         conn.close()
 
