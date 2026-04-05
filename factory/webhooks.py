@@ -64,6 +64,8 @@ def send_webhook_async(payload: dict[str, str]) -> None:
 
 
 def event_type_for_state_change(*, event_name: str, new_status: str) -> str | None:
+    if new_status == "dead":
+        return "work_item.dead"
     if new_status == "done":
         return "work_item.completed"
     if new_status == "blocked":
@@ -89,6 +91,16 @@ def notify_state_change(*, event_name: str, work_item_id: str, title: str | None
 def notify_stuck(*, work_item_id: str, title: str | None, status: str) -> None:
     payload = build_payload(
         event_type="work_item.stuck",
+        work_item_id=work_item_id,
+        title=title,
+        status=status,
+    )
+    send_webhook_async(payload)
+
+
+def notify_event(*, event_type: str, work_item_id: str, title: str | None, status: str) -> None:
+    payload = build_payload(
+        event_type=event_type,
         work_item_id=work_item_id,
         title=title,
         status=status,

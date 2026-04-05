@@ -330,6 +330,40 @@ def test_post_work_items_assigns_correlation_id(api_client: TestClient) -> None:
     assert fetched.json()["work_item"]["correlation_id"] == corr
 
 
+def test_post_work_items_returns_409_for_duplicate_idempotency_key(api_client: TestClient) -> None:
+    key = "idem-key-001"
+    first = api_client.post(
+        "/api/work_items",
+        json={"title": "First", "kind": "task", "idempotency_key": key},
+    )
+    assert first.status_code == 200
+    first_id = first.json()["work_item"]["id"]
+
+    second = api_client.post(
+        "/api/work_items",
+        json={"title": "Second", "kind": "task", "idempotency_key": key},
+    )
+    assert second.status_code == 409
+    assert second.json() == {"error": "duplicate", "existing_id": first_id}
+
+
+def test_post_work_items_accepts_deadline_and_get_exposes_it(api_client: TestClient) -> None:
+    deadline = "2026-04-10T10:20:30Z"
+    response = api_client.post(
+        "/api/work_items",
+        json={"title": "Deadline item", "kind": "task", "deadline_at": deadline},
+    )
+    assert response.status_code == 200
+    wi = response.json()["work_item"]
+    assert wi["deadline_at"] is not None
+    assert wi["deadline_at"].startswith("2026-04-10T10:20:30")
+
+    wi_id = wi["id"]
+    fetched = api_client.get(f"/api/work_items?id={wi_id}")
+    assert fetched.status_code == 200
+    assert fetched.json()["work_item"]["deadline_at"].startswith("2026-04-10T10:20:30")
+
+
 def test_post_runs_preserves_correlation_id_in_run_and_events(api_client: TestClient) -> None:
     created = api_client.post("/api/work_items", json={"title": "Run item", "kind": "atom"})
     wi_id = created.json()["work_item"]["id"]

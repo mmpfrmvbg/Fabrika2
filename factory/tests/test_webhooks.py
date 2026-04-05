@@ -79,3 +79,12 @@ def test_notify_state_change_emits_expected_payload(monkeypatch) -> None:
     )
     assert len(sent) == 3
     assert sent[2]["event_type"] == "work_item.stuck"
+
+    webhooks.notify_state_change(
+        event_name="forge_failed",
+        work_item_id="wi-4",
+        title="Dead letter",
+        status="dead",
+    )
+    assert len(sent) == 4
+    assert sent[3]["event_type"] == "work_item.dead"

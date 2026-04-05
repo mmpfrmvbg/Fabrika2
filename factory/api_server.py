@@ -108,6 +108,8 @@ class WorkItemCreateRequest(BaseModel):
     kind: str = Field(default="vision", min_length=1, max_length=32)
     parent_id: str | None = Field(default=None, min_length=1, max_length=128)
     priority: int = Field(default=0, ge=-100000, le=100000)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=256)
+    deadline_at: datetime | None = Field(default=None)
 
 
 class ChatCreateRequest(BaseModel):
@@ -1214,6 +1216,18 @@ def create_work_item_legacy(
     payload = body if isinstance(body, WorkItemCreateRequest) else WorkItemCreateRequest.model_validate(body)
     conn = _open_rw()
     try:
+        idempotency_key = payload.idempotency_key.strip() if payload.idempotency_key else None
+        if idempotency_key:
+            existing = conn.execute(
+                "SELECT id FROM work_items WHERE idempotency_key = ?",
+                (idempotency_key,),
+            ).fetchone()
+            if existing:
+                return JSONResponse(
+                    status_code=409,
+                    content={"error": "duplicate", "existing_id": existing["id"]},
+                )
+
         wi_id = gen_id("wi")
         parent_id = payload.parent_id.strip() if payload.parent_id else None
         root_id = wi_id
@@ -1233,9 +1247,10 @@ def create_work_item_legacy(
             """
             INSERT INTO work_items (
                 id, parent_id, root_id, kind, title, description, status,
-                creator_role, owner_role, planning_depth, priority, correlation_id
+                creator_role, owner_role, planning_depth, priority, correlation_id,
+                idempotency_key, deadline_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, 'draft', 'creator', 'creator', ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, 'draft', 'creator', 'creator', ?, ?, ?, ?, ?)
             """,
             (
                 wi_id,
@@ -1247,11 +1262,25 @@ def create_work_item_legacy(
                 depth,
                 int(payload.priority),
                 correlation_id,
+                idempotency_key,
+                payload.deadline_at.astimezone(timezone.utc).isoformat() if payload.deadline_at else None,
             ),
         )
         conn.commit()
         wi = conn.execute("SELECT * FROM work_items WHERE id = ?", (wi_id,)).fetchone()
         return {"ok": True, "work_item": _row(wi)}
+    except sqlite3.IntegrityError:
+        if idempotency_key:
+            existing = conn.execute(
+                "SELECT id FROM work_items WHERE idempotency_key = ?",
+                (idempotency_key,),
+            ).fetchone()
+            if existing:
+                return JSONResponse(
+                    status_code=409,
+                    content={"error": "duplicate", "existing_id": existing["id"]},
+                )
+        raise
     finally:
         conn.close()
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import random
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
@@ -10,6 +11,7 @@ from .config import AccountManager
 from .db import gen_id, payload_hash, stable_json_dumps
 from .logging import FactoryLogger
 from .models import EventType, QueueName, Role, RunType, Severity
+from .webhooks import notify_event
 
 
 class Actions:
@@ -181,21 +183,7 @@ class Actions:
         )
 
     def action_increment_retry(self, wi_id: str, **ctx: Any) -> None:
-        self.conn.execute(
-            "UPDATE work_items SET retry_count = retry_count + 1 WHERE id = ?",
-            (wi_id,),
-        )
-        self.conn.execute(
-            """
-            UPDATE work_item_queue
-            SET attempts = attempts + 1,
-                lease_owner = NULL,
-                lease_until = NULL
-            WHERE work_item_id = ?
-            """,
-            (wi_id,),
-        )
-        exhausted = self.conn.execute(
+        queue_row = self.conn.execute(
             """
             SELECT attempts, max_attempts
             FROM work_item_queue
@@ -203,9 +191,32 @@ class Actions:
             """,
             (wi_id,),
         ).fetchone()
-        if exhausted and int(exhausted["attempts"] or 0) >= int(exhausted["max_attempts"] or 0):
+        attempts = int(queue_row["attempts"] or 0) if queue_row else 0
+        max_attempts = int(queue_row["max_attempts"] or 0) if queue_row else 0
+
+        self.conn.execute(
+            "UPDATE work_items SET retry_count = retry_count + 1 WHERE id = ?",
+            (wi_id,),
+        )
+        if queue_row and attempts >= max_attempts:
             self.action_mark_dead(wi_id, **ctx)
             return
+
+        base_delay_sec = 30
+        max_delay_sec = 3600
+        jitter_sec = random.randint(0, 30)
+        delay_sec = min(max_delay_sec, (base_delay_sec * (2**attempts)) + jitter_sec)
+        self.conn.execute(
+            """
+            UPDATE work_item_queue
+            SET attempts = attempts + 1,
+                available_at = strftime('%Y-%m-%dT%H:%M:%f','now', '+' || ? || ' seconds'),
+                lease_owner = NULL,
+                lease_until = NULL
+            WHERE work_item_id = ?
+            """,
+            (str(delay_sec), wi_id),
+        )
         self._enqueue(wi_id, QueueName.FORGE_INBOX)
 
     def action_escalate_to_judge(self, wi_id: str, **ctx: Any) -> None:
@@ -216,6 +227,10 @@ class Actions:
         self._enqueue(wi_id, QueueName.JUDGE_INBOX)
 
     def action_mark_dead(self, wi_id: str, **ctx: Any) -> None:
+        wi = self.conn.execute(
+            "SELECT title FROM work_items WHERE id = ?",
+            (wi_id,),
+        ).fetchone()
         self.conn.execute(
             """
             UPDATE work_items
@@ -230,6 +245,12 @@ class Actions:
         self.conn.execute(
             "DELETE FROM work_item_queue WHERE work_item_id = ?",
             (wi_id,),
+        )
+        notify_event(
+            event_type="work_item.dead",
+            work_item_id=wi_id,
+            title=wi["title"] if wi else None,
+            status="dead",
         )
 
     def action_commit_to_git(self, wi_id: str, **ctx: Any) -> None:
