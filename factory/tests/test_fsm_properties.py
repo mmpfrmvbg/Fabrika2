@@ -4,7 +4,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-from hypothesis import given
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from factory.composition import wire
@@ -32,6 +32,7 @@ def _insert_atom(conn: sqlite3.Connection, wi_id: str, *, status: str) -> None:
 
 
 @given(st.sampled_from(["forge_completed", "forge_failed", "review_passed", "review_failed", "judge_approved", "judge_rejected"]))
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_terminal_states_do_not_transition_to_non_terminal(tmp_path: Path, event_name: str) -> None:
     factory = wire(tmp_path / "fsm_props_terminal.db")
     conn = factory["conn"]
@@ -48,6 +49,7 @@ def test_terminal_states_do_not_transition_to_non_terminal(tmp_path: Path, event
 
 
 @given(st.sampled_from([None, "", "draft", "ready_for_work", "in_progress"]))
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_recovery_never_returns_pending_after_processing_started(tmp_path: Path, previous_status: str | None) -> None:
     factory = wire(tmp_path / "fsm_props_recovery.db")
     conn = factory["conn"]
@@ -79,6 +81,7 @@ def test_recovery_never_returns_pending_after_processing_started(tmp_path: Path,
 
 
 @given(st.sampled_from(["worker-a", "worker-b", "worker-c"]))
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_concurrent_claims_have_single_lease_holder(tmp_path: Path, first_worker: str) -> None:
     db_path = tmp_path / "fsm_props_claims.db"
     conn = init_db(db_path)
