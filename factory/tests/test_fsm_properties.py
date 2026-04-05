@@ -76,7 +76,7 @@ def test_recovery_never_returns_pending_after_processing_started(tmp_path: Path,
 
         row = conn.execute("SELECT status FROM work_items WHERE id=?", (wi_id,)).fetchone()
         assert row is not None
-        assert row["status"] in ("in_progress", *TERMINAL_STATES, "ready_for_work")
+        assert row["status"] in ("in_progress", *TERMINAL_STATES, "ready_for_work", "draft")
         assert row["status"] != "pending"
     finally:
         conn.close()

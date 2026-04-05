@@ -86,7 +86,7 @@ class Guards:
         if queue_row is not None:
             attempts = int(queue_row["attempts"] or 0)
             max_attempts = int(queue_row["max_attempts"] or 0)
-            if attempts < max_attempts:
+            if attempts + 1 < max_attempts:
                 return True, f"Попытка {attempts+1}/{max_attempts}"
             return False, f"Исчерпаны все {max_attempts} попыток"
 
