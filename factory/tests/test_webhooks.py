@@ -9,16 +9,35 @@ import pytest
 
 from factory import webhooks
 
-httpretty = pytest.importorskip("httpretty")
+responses = pytest.importorskip("responses")
+requests = pytest.importorskip("requests")
 
 
-@httpretty.activate(allow_net_connect=False)
+class _AsyncClientViaRequests:
+    def __init__(self, timeout: float = 10.0):
+        self.timeout = timeout
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def post(self, url: str, *, content: bytes, headers: dict[str, str]):
+        try:
+            return requests.post(url, data=content, headers=headers, timeout=self.timeout)
+        except requests.RequestException as exc:
+            raise webhooks.httpx.TransportError(str(exc)) from exc
+
+
+@responses.activate
 def test_send_webhook_posts_json_with_signature(monkeypatch) -> None:
     url = "http://example.test/factory-hook"
     monkeypatch.setattr(webhooks, "FACTORY_WEBHOOK_URL", url)
     monkeypatch.setattr(webhooks, "FACTORY_WEBHOOK_SECRET", "super-secret")
+    monkeypatch.setattr(webhooks.httpx, "AsyncClient", _AsyncClientViaRequests)
 
-    httpretty.register_uri(httpretty.POST, url, body="ok", status=200)
+    responses.add(method=responses.POST, url=url, body="ok", status=200)
 
     payload = webhooks.build_payload(
         event_type="work_item.completed",
@@ -28,9 +47,10 @@ def test_send_webhook_posts_json_with_signature(monkeypatch) -> None:
     )
     asyncio.run(webhooks.send_webhook(payload))
 
-    req = httpretty.last_request()
+    assert len(responses.calls) == 1
+    req = responses.calls[0].request
     assert req.method == "POST"
-    assert req.path == "/factory-hook"
+    assert req.path_url == "/factory-hook"
 
     raw_body = req.body.decode("utf-8") if isinstance(req.body, bytes) else req.body
     data = json.loads(raw_body)
@@ -46,6 +66,26 @@ def test_send_webhook_posts_json_with_signature(monkeypatch) -> None:
         hashlib.sha256,
     ).hexdigest()
     assert req.headers["X-Webhook-Signature"] == expected_sig
+
+
+@responses.activate
+def test_send_webhook_network_error(monkeypatch) -> None:
+    url = "http://example.test/factory-hook"
+    monkeypatch.setattr(webhooks, "FACTORY_WEBHOOK_URL", url)
+    monkeypatch.setattr(webhooks, "FACTORY_WEBHOOK_SECRET", "super-secret")
+    monkeypatch.setattr(webhooks.httpx, "AsyncClient", _AsyncClientViaRequests)
+
+    responses.add(method=responses.POST, url=url, body=requests.ConnectionError("boom"))
+
+    payload = webhooks.build_payload(
+        event_type="work_item.failed",
+        work_item_id="wi-err",
+        title="Broken",
+        status="failed",
+    )
+
+    with pytest.raises(webhooks.httpx.TransportError):
+        asyncio.run(webhooks.send_webhook(payload))
 
 
 def test_notify_state_change_emits_expected_payload(monkeypatch) -> None:
