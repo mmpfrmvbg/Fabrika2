@@ -24,8 +24,9 @@ from .schema_ddl import DDL, V_API_USAGE_TODAY_RECREATE
 # Последняя миграция: 1=базовый DDL, 2=improvement_candidates, 3=file_changes.intent_override,
 # 4=fsm creator_cancelled/archive_sweep, 5=judge_rejected release locks, 6=cleanup stale locks,
 # 7=forensic_tracing_fields, 8=runs_retry_count, 9=runs_source_run_id_dry_run,
-# 10=work_items heartbeat, 11=sqlite_performance_indexes, 12=work_items_priority, 13=dead_status
-_SCHEMA_VERSION = 14
+# 10=work_items heartbeat, 11=sqlite_performance_indexes, 12=work_items_priority, 13=dead_status,
+# 14=correlation_ids
+_SCHEMA_VERSION = 15
 _SQLITE_TIMEOUT_SEC = SQLITE_TIMEOUT_SECONDS
 _SQLITE_BUSY_TIMEOUT_MS = SQLITE_BUSY_TIMEOUT_MS
 _LOG = logging.getLogger("factory.db")
@@ -396,6 +397,23 @@ def _migration_correlation_ids(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_work_items_reliability_fields(conn: sqlite3.Connection) -> None:
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(work_items)").fetchall()}
+    if "idempotency_key" not in cols:
+        conn.execute("ALTER TABLE work_items ADD COLUMN idempotency_key TEXT")
+    if "deadline_at" not in cols:
+        conn.execute("ALTER TABLE work_items ADD COLUMN deadline_at TEXT")
+    if "failure_reason" not in cols:
+        conn.execute("ALTER TABLE work_items ADD COLUMN failure_reason TEXT")
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_wi_idempotency_key_not_null
+        ON work_items(idempotency_key)
+        WHERE idempotency_key IS NOT NULL
+        """
+    )
+
+
 @contextmanager
 def _advisory_file_lock(
     path: Path, *, timeout_sec: float = 60.0, poll_sec: float = 0.05
@@ -589,6 +607,13 @@ def ensure_schema(db_path: Path = DB_PATH) -> None:
                 _migration_correlation_ids(conn)
                 conn.execute(
                     "INSERT OR IGNORE INTO migrations(version, name) VALUES (14, 'correlation_ids')"
+                )
+                mv = _max_migration_version(conn)
+
+            if mv < 15:
+                _migration_work_items_reliability_fields(conn)
+                conn.execute(
+                    "INSERT OR IGNORE INTO migrations(version, name) VALUES (15, 'work_items_reliability_fields')"
                 )
 
             conn.commit()

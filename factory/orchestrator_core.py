@@ -19,6 +19,7 @@ from .agents import architect, forge, judge, planner, reviewer
 from .fsm import StateMachine
 from .logging import FactoryLogger
 from .models import EventType, QueueName, Role, RunType, Severity
+from .webhooks import notify_event
 
 _forge_worker_lock = threading.Lock()
 _active_forge_worker: threading.Thread | None = None
@@ -136,6 +137,7 @@ class Orchestrator:
 
         self._expire_leases()
         self._check_blocked_items()
+        self._enforce_deadlines()
 
         self._auto_enqueue_ready_atoms()
 
@@ -270,6 +272,10 @@ class Orchestrator:
                     and exhausted
                     and int(exhausted["attempts"] or 0) >= int(exhausted["max_attempts"] or 0)
                 ):
+                    wi = self.conn.execute(
+                        "SELECT title FROM work_items WHERE id = ?",
+                        (item["work_item_id"],),
+                    ).fetchone()
                     self.conn.execute(
                         """
                         UPDATE work_items
@@ -279,9 +285,49 @@ class Orchestrator:
                         """,
                         (item["work_item_id"],),
                     )
+                    notify_event(
+                        event_type="work_item.dead",
+                        work_item_id=item["work_item_id"],
+                        title=wi["title"] if wi else None,
+                        status="dead",
+                    )
 
     def _dispatch_judge(self, item: dict):
         judge.run_judge(self, item)
+
+    def _enforce_deadlines(self) -> None:
+        overdue_rows = self.conn.execute(
+            """
+            SELECT id, title, status
+            FROM work_items
+            WHERE deadline_at IS NOT NULL
+              AND deadline_at < strftime('%Y-%m-%dT%H:%M:%f','now')
+              AND status NOT IN ('completed', 'done', 'failed', 'dead')
+            """
+        ).fetchall()
+        for row in overdue_rows:
+            wi_id = row["id"]
+            old_status = row["status"]
+            self.conn.execute(
+                """
+                UPDATE work_items
+                SET previous_status = ?,
+                    status = 'failed',
+                    failure_reason = 'deadline_exceeded'
+                WHERE id = ?
+                """,
+                (old_status, wi_id),
+            )
+            self.conn.execute(
+                "DELETE FROM work_item_queue WHERE work_item_id = ?",
+                (wi_id,),
+            )
+            notify_event(
+                event_type="work_item.deadline_exceeded",
+                work_item_id=wi_id,
+                title=row["title"],
+                status="failed",
+            )
 
     def _dispatch_architect(self, item: dict):
         architect.run_architect(self, item)

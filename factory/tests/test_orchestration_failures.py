@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+import factory.webhooks as webhooks
+from factory.actions import Actions
 from factory.api_server import app
 from factory.composition import wire
 from factory.db import init_db
@@ -206,3 +208,106 @@ def test_events_endpoint_sse_streams_event_log(
     assert "event: task." in body
     assert "data: {" in body
     assert "\n\n" in body
+
+
+def test_action_increment_retry_sets_exponential_backoff_with_jitter(
+    wired_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = wired_factory["conn"]
+    actions = Actions(conn, wired_factory["logger"], wired_factory["accounts"])
+    _insert_atom(conn, "wi_retry", status="in_progress")
+    conn.execute(
+        """
+        INSERT INTO work_item_queue (
+            work_item_id, queue_name, priority, available_at, attempts, max_attempts
+        )
+        VALUES ('wi_retry', ?, 10, strftime('%Y-%m-%dT%H:%M:%f','now'), 1, 5)
+        """,
+        (QueueName.FORGE_INBOX.value,),
+    )
+    conn.commit()
+    monkeypatch.setattr("factory.actions.random.randint", lambda _a, _b: 7)
+
+    actions.action_increment_retry("wi_retry")
+    conn.commit()
+
+    row = conn.execute(
+        """
+        SELECT attempts,
+               ROUND((julianday(available_at) - julianday('now')) * 86400.0) AS delay_sec
+        FROM work_item_queue
+        WHERE work_item_id = 'wi_retry'
+        """
+    ).fetchone()
+    assert row is not None
+    assert row["attempts"] == 2
+    assert 64 <= int(row["delay_sec"]) <= 69  # 30*2^1 + 7 == 67 sec (+/- SQL timing)
+
+
+def test_action_increment_retry_promotes_to_dead_and_notifies_webhook(
+    wired_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = wired_factory["conn"]
+    actions = Actions(conn, wired_factory["logger"], wired_factory["accounts"])
+    _insert_atom(conn, "wi_dead_retry", status="in_progress")
+    conn.execute(
+        """
+        INSERT INTO work_item_queue (
+            work_item_id, queue_name, priority, available_at, attempts, max_attempts
+        )
+        VALUES ('wi_dead_retry', ?, 10, strftime('%Y-%m-%dT%H:%M:%f','now'), 3, 3)
+        """,
+        (QueueName.FORGE_INBOX.value,),
+    )
+    sent: list[dict[str, str]] = []
+    monkeypatch.setattr(webhooks, "send_webhook_async", lambda payload: sent.append(payload))
+
+    actions.action_increment_retry("wi_dead_retry")
+    conn.commit()
+
+    row = conn.execute("SELECT status, dead_at FROM work_items WHERE id='wi_dead_retry'").fetchone()
+    q = conn.execute("SELECT 1 FROM work_item_queue WHERE work_item_id='wi_dead_retry'").fetchone()
+    assert row["status"] == "dead"
+    assert row["dead_at"] is not None
+    assert q is None
+    assert sent and sent[-1]["event_type"] == "work_item.dead"
+
+
+def test_tick_enforces_deadline_and_fires_webhook(
+    wired_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conn = wired_factory["conn"]
+    orch = wired_factory["orchestrator"]
+    sent: list[dict[str, str]] = []
+    monkeypatch.setattr(webhooks, "send_webhook_async", lambda payload: sent.append(payload))
+    conn.execute(
+        """
+        INSERT INTO work_items (
+            id, parent_id, root_id, kind, title, description, status,
+            previous_status, creator_role, owner_role, planning_depth, priority,
+            deadline_at, created_at, updated_at
+        )
+        VALUES (
+            'wi_deadline', NULL, 'wi_deadline', 'task', 'Deadline', '',
+            'in_progress', 'ready_for_work', 'creator', 'forge', 0, 0,
+            strftime('%Y-%m-%dT%H:%M:%f','now','-5 minutes'),
+            strftime('%Y-%m-%dT%H:%M:%f','now','-10 minutes'),
+            strftime('%Y-%m-%dT%H:%M:%f','now','-10 minutes')
+        )
+        """
+    )
+    conn.commit()
+
+    orch.tick()
+    conn.commit()
+
+    row = conn.execute(
+        "SELECT status, failure_reason FROM work_items WHERE id='wi_deadline'"
+    ).fetchone()
+    assert row is not None
+    assert row["status"] == "failed"
+    assert row["failure_reason"] == "deadline_exceeded"
+    assert sent and sent[-1]["event_type"] == "work_item.deadline_exceeded"

@@ -24,6 +24,8 @@ class WorkItemStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     IN_REVIEW = "in_review"
     REVIEW_REJECTED = "review_rejected"
+    FAILED = "failed"
+    DEAD = "dead"
     DONE = "done"
     CANCELLED = "cancelled"
     BLOCKED = "blocked"

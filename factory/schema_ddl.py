@@ -80,9 +80,12 @@ CREATE TABLE IF NOT EXISTS work_items (
     origin_work_item_id   TEXT REFERENCES work_items(id),  -- если переформулирована
     planning_depth        INTEGER NOT NULL DEFAULT 0,
     retry_count           INTEGER NOT NULL DEFAULT 0,
+    idempotency_key       TEXT,
     correlation_id        TEXT,
     max_retries           INTEGER NOT NULL DEFAULT """ + str(MAX_ATOM_RETRIES) + """,
     needs_human_review    INTEGER NOT NULL DEFAULT 0,
+    failure_reason        TEXT,
+    deadline_at           TEXT,
     estimated_complexity  TEXT,          -- simple / medium / complex
     tags                  TEXT,          -- JSON-массив тегов
     metadata              TEXT,          -- JSON произвольный
@@ -99,6 +102,9 @@ CREATE INDEX IF NOT EXISTS idx_wi_owner      ON work_items(owner_role);
 CREATE INDEX IF NOT EXISTS idx_wi_kind       ON work_items(kind);
 CREATE INDEX IF NOT EXISTS idx_wi_priority   ON work_items(status, priority);
 CREATE INDEX IF NOT EXISTS idx_wi_correlation ON work_items(correlation_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_wi_idempotency_key_not_null
+    ON work_items(idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
 
 CREATE TRIGGER IF NOT EXISTS trg_wi_updated
     AFTER UPDATE ON work_items
