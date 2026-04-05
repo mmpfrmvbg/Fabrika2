@@ -198,7 +198,7 @@ class Actions:
             "UPDATE work_items SET retry_count = retry_count + 1 WHERE id = ?",
             (wi_id,),
         )
-        if queue_row and attempts >= max_attempts:
+        if queue_row and attempts + 1 >= max_attempts:
             self.action_mark_dead(wi_id, **ctx)
             return
 
