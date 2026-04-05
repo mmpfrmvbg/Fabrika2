@@ -13,10 +13,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from factory.composition import wire
 from factory.e2e_golden import _seed_judge_forge_chain, _seed_review_only
 from factory.models import WorkItemStatus
 from factory.qwen_cli_runner import ForgeResult
+
+pytestmark = [pytest.mark.slow, pytest.mark.wet]
 
 
 class ReviewerWetLLMTests(unittest.TestCase):
