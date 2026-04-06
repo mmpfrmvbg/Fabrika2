@@ -17,8 +17,8 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
 from .fsm import StateMachine
-from .models import QueueName, Role, RunType, WorkItemKind, WorkItemStatus
 from .guards import Guards
+from .models import QueueName, Role, RunType, WorkItemKind, WorkItemStatus
 
 if TYPE_CHECKING:
     from .orchestrator_core import Orchestrator
@@ -74,11 +74,11 @@ def mark_atom_ready_for_forge(
 
     if st != WorkItemStatus.DRAFT.value:
         raise ValueError(f"mark_atom_ready_for_forge: ожидался draft, status={st!r}")
+
     _g = Guards(conn)
     _ok, _reason = _g.guard_ready_for_forge(atom_id)
     if not _ok:
         raise ValueError(f"mark_atom_ready_for_forge: guard_ready_for_forge failed: {_reason}")
-
 
     ok, msg = sm.apply_transition(
         atom_id,
@@ -87,6 +87,7 @@ def mark_atom_ready_for_forge(
     )
     if not ok:
         raise RuntimeError(f"architect_submitted: {msg}")
+
     if orchestrator is not None:
         from .agents import judge
 
@@ -100,8 +101,6 @@ def mark_atom_ready_for_forge(
         if not ok:
             raise RuntimeError(f"judge_approved: {msg}")
 
-    # Enqueue into forge_inbox so select_next_atom_for_forge can find it
-    from .models import QueueName
     conn.execute(
         """
         INSERT OR IGNORE INTO work_item_queue
@@ -111,6 +110,7 @@ def mark_atom_ready_for_forge(
         (atom_id, QueueName.FORGE_INBOX.value),
     )
     conn.commit()
+
 
 def select_next_atom_for_forge(conn: sqlite3.Connection) -> Optional[dict[str, Any]]:
     """
