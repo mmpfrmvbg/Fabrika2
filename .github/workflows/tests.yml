@@ -9,8 +9,6 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    continue-on-error: true
-
     steps:
       - uses: actions/checkout@v4
 
@@ -92,7 +90,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run coverage (70% minimum)
+      - name: Run coverage (75% minimum)
         run: make coverage
 
       - name: Upload coverage reports
@@ -112,7 +110,7 @@ jobs:
           root = ET.parse('coverage.xml').getroot()
           line_rate = float(root.attrib.get('line-rate', 0.0)) * 100
           branch_rate = float(root.attrib.get('branch-rate', 0.0)) * 100
-          summary = f"### Coverage Summary\\n- Line coverage: **{line_rate:.2f}%**\\n- Branch coverage: **{branch_rate:.2f}%**\\n- Threshold: **70% minimum**"
+          summary = f"### Coverage Summary\\n- Line coverage: **{line_rate:.2f}%**\\n- Branch coverage: **{branch_rate:.2f}%**\\n- Threshold: **75% minimum**"
           with open('coverage-summary.md', 'w', encoding='utf-8') as f:
             f.write(summary)
           with open(__import__('os').environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
@@ -137,7 +135,6 @@ jobs:
   security:
     runs-on: ubuntu-latest
     continue-on-error: true
-
     steps:
       - uses: actions/checkout@v4
 
