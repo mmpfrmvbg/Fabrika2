@@ -87,13 +87,18 @@ def mark_atom_ready_for_forge(
     )
     if not ok:
         raise RuntimeError(f"architect_submitted: {msg}")
-    ok, msg = sm.apply_transition(
-        atom_id,
-        "judge_approved",
-        actor_role=Role.JUDGE.value,
-    )
-    if not ok:
-        raise RuntimeError(f"judge_approved: {msg}")
+    if orchestrator is not None:
+        from .agents import judge
+
+        judge.run_judge(orchestrator, {"work_item_id": atom_id})
+    else:
+        ok, msg = sm.apply_transition(
+            atom_id,
+            "judge_approved",
+            actor_role=Role.JUDGE.value,
+        )
+        if not ok:
+            raise RuntimeError(f"judge_approved: {msg}")
 
     # Enqueue into forge_inbox so select_next_atom_for_forge can find it
     from .models import QueueName
