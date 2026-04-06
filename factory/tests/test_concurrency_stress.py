@@ -15,6 +15,8 @@ from factory.queue_ops import claim_forge_inbox_atom
 import factory.worker as worker_mod
 from factory.worker import recover_stuck_running_work_items, worker_iteration
 
+pytestmark = pytest.mark.slow
+
 
 _FORGE_RUN_LOCK = threading.Lock()
 _ITERATION_LOCK = threading.Lock()

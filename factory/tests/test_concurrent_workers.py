@@ -10,10 +10,13 @@ import time
 import unittest
 from pathlib import Path
 
+import pytest
 from factory.composition import wire
 from factory.db import gen_id, init_db
 from factory.models import Role, RunType, WorkItemStatus
 from factory.worker import worker_iteration
+
+pytestmark = pytest.mark.slow
 
 
 class ConcurrentWorkersTests(unittest.TestCase):
