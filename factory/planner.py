@@ -286,7 +286,7 @@ class Planner:
                                     )
                             # Атомы создаются в draft (create_child); готовность к кузнице — отдельно:
                             # forge_next_atom.mark_atom_ready_for_forge (ready_for_work + forge_inbox).
-                            self.ops.create_child(
+                            atom_id = self.ops.create_child(
                                 tid,
                                 "atom",
                                 atom["title"].strip(),
@@ -295,6 +295,17 @@ class Planner:
                                 files=files_payload,
                                 auto_commit=False,
                             )
+                    if atom_id:
+                        self.conn.execute(
+                            "UPDATE work_items SET status='ready_for_work', owner_role='forge' WHERE id=?",
+                            (atom_id,),
+                        )
+                        self.conn.execute(
+                            """INSERT OR REPLACE INTO work_item_queue
+                            (work_item_id, queue_name, priority, available_at, attempts)
+                            VALUES (?, 'forge_inbox', 10, datetime('now'), 0)""",
+                            (atom_id,),
+                        )
             if na == 0:
                 conn.rollback()
                 _LOG.warning("planner: после валидации 0 атомов — откат")
