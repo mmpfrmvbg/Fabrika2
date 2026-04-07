@@ -964,23 +964,23 @@ def patch_work_item(
                 status_code=400,
                 detail=f"edit not allowed for status {st}",
             )
-        sets: list[str] = []
-        params: list[Any] = []
-        if title is not None:
-            sets.append("title = ?")
-            params.append(str(title).strip() or row["title"])
-        if description is not None:
-            sets.append("description = ?")
-            params.append(
-                None if description is None else str(description)
+        if title is not None and description is not None:
+            conn.execute(
+                "UPDATE work_items SET title = ?, description = ? WHERE id = ?",
+                (str(title).strip() or row["title"], str(description), wi_id),
             )
-        if not sets:
+        elif title is not None:
+            conn.execute(
+                "UPDATE work_items SET title = ? WHERE id = ?",
+                (str(title).strip() or row["title"], wi_id),
+            )
+        elif description is not None:
+            conn.execute(
+                "UPDATE work_items SET description = ? WHERE id = ?",
+                (str(description), wi_id),
+            )
+        else:
             raise HTTPException(status_code=400, detail="nothing to update")
-        params.append(wi_id)
-        conn.execute(
-            f"UPDATE work_items SET {', '.join(sets)} WHERE id = ?",
-            params,
-        )
         logger.log(
             EventType.WORK_ITEM_UPDATED,
             "work_item",
