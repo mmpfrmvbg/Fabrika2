@@ -149,10 +149,12 @@ def _get_logger(conn: sqlite3.Connection | None = None) -> FactoryLogger:
 
 
 async def require_api_key(request: Request) -> None:
-    """Если задан ``FACTORY_API_KEY``, endpoint требует заголовок ``X-API-Key``."""
+    """Требует валидный ``X-API-Key`` для защищённых endpoint."""
     expected = get_factory_api_key()
     if not expected:
-        return
+        raise RuntimeError(
+            "FACTORY_API_KEY is not configured. Set FACTORY_API_KEY before starting the API server."
+        )
     got = (request.headers.get("X-API-Key") or "").strip()
     if got != expected:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -327,8 +329,19 @@ class _OrchestratorThread:
 _orch_thread = _OrchestratorThread()
 
 
+def _ensure_api_key_configured() -> str:
+    api_key = get_factory_api_key()
+    if not api_key:
+        raise RuntimeError(
+            "FACTORY_API_KEY is required for API server startup. "
+            "Set FACTORY_API_KEY environment variable."
+        )
+    return api_key
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    _ensure_api_key_configured()
     _orch_thread.start()
     try:
         yield
