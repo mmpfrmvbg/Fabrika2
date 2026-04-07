@@ -26,3 +26,8 @@ server.log
 htmlcov/
 .coverage
 coverage.xml
+
+# Temporary debug files
+fix_test.py
+query.py
+e2e_chain_decomposition.json
