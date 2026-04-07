@@ -1,4 +1,4 @@
-"""Детерминированный цикл опроса очередей: lease, разблокировки, FSM-события."""
+﻿"""Р”РµС‚РµСЂРјРёРЅРёСЂРѕРІР°РЅРЅС‹Р№ С†РёРєР» РѕРїСЂРѕСЃР° РѕС‡РµСЂРµРґРµР№: lease, СЂР°Р·Р±Р»РѕРєРёСЂРѕРІРєРё, FSM-СЃРѕР±С‹С‚РёСЏ."""
 import os
 import threading
 import time
@@ -39,8 +39,8 @@ def _env_orchestrator_async() -> bool:
 
 def wait_for_async_workers(timeout: float = 120.0) -> None:
     """
-    Ждёт завершения фоновых forge/review-воркеров (см. ``FACTORY_ORCHESTRATOR_ASYNC=1``).
-    Для тестов и E2E после ``tick()`` / ``orchestrator_tick()``.
+    Р–РґС‘С‚ Р·Р°РІРµСЂС€РµРЅРёСЏ С„РѕРЅРѕРІС‹С… forge/review-РІРѕСЂРєРµСЂРѕРІ (СЃРј. ``FACTORY_ORCHESTRATOR_ASYNC=1``).
+    Р”Р»СЏ С‚РµСЃС‚РѕРІ Рё E2E РїРѕСЃР»Рµ ``tick()`` / ``orchestrator_tick()``.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -64,9 +64,9 @@ def wait_for_async_workers(timeout: float = 120.0) -> None:
 
 class Orchestrator:
     """
-    Детерминированный диспетчер фабрики (не LLM).
+    Р”РµС‚РµСЂРјРёРЅРёСЂРѕРІР°РЅРЅС‹Р№ РґРёСЃРїРµС‚С‡РµСЂ С„Р°Р±СЂРёРєРё (РЅРµ LLM).
 
-    Тик: housekeeping -> разблокировки -> completion_inbox -> диспетчеры очередей.
+    РўРёРє: housekeeping -> СЂР°Р·Р±Р»РѕРєРёСЂРѕРІРєРё -> completion_inbox -> РґРёСЃРїРµС‚С‡РµСЂС‹ РѕС‡РµСЂРµРґРµР№.
     """
 
     def __init__(
@@ -90,7 +90,7 @@ class Orchestrator:
             EventType.TASK_STATUS_CHANGED,
             "system",
             "orchestrator",
-            "Оркестратор запущен",
+            "РћСЂРєРµСЃС‚СЂР°С‚РѕСЂ Р·Р°РїСѓС‰РµРЅ",
             actor_role=Role.ORCHESTRATOR.value,
             tags=["lifecycle"],
             payload={"sub": "orchestrator_started"},
@@ -106,7 +106,7 @@ class Orchestrator:
                     EventType.TASK_STATUS_CHANGED,
                     "system",
                     "orchestrator",
-                    f"Ошибка в цикле: {e}",
+                    f"РћС€РёР±РєР° РІ С†РёРєР»Рµ: {e}",
                     severity=Severity.ERROR,
                     payload={"error": str(e), "sub": "orchestrator_error"},
                 )
@@ -119,7 +119,7 @@ class Orchestrator:
             EventType.TASK_STATUS_CHANGED,
             "system",
             "orchestrator",
-            "Оркестратор остановлен",
+            "РћСЂРєРµСЃС‚СЂР°С‚РѕСЂ РѕСЃС‚Р°РЅРѕРІР»РµРЅ",
             actor_role=Role.ORCHESTRATOR.value,
             tags=["lifecycle"],
             payload={"sub": "orchestrator_stopped"},
@@ -146,7 +146,7 @@ class Orchestrator:
         self._dispatch_ready_atoms()
         self.process_forge_queue()
         self.process_review_queue()
-        # st_16 sent_to_judge: не внутри Reviewer — оркестратор (после review_failed → review_rejected).
+        # st_16 sent_to_judge: РЅРµ РІРЅСѓС‚СЂРё Reviewer вЂ” РѕСЂРєРµСЃС‚СЂР°С‚РѕСЂ (РїРѕСЃР»Рµ review_failed в†’ review_rejected).
         self._escalate_review_rejected_to_judge()
         self._process_queue(QueueName.JUDGE_INBOX, self._dispatch_judge)
         self._process_queue(QueueName.ARCHITECT_INBOX, self._dispatch_architect)
@@ -154,7 +154,7 @@ class Orchestrator:
 
         self._maybe_architect_proactive_scan()
 
-        # Introspect pass — every N ticks (FACTORY_INTROSPECT_TICKS, default 20)
+        # Introspect pass вЂ” every N ticks (FACTORY_INTROSPECT_TICKS, default 20)
         try:
             from .factory_introspect import run_introspect_tick
 
@@ -174,8 +174,8 @@ class Orchestrator:
 
     def _process_queue(self, queue: QueueName, handler: Callable):
         """
-        Один SQL ``UPDATE … WHERE rowid=(SELECT … LIMIT 1)`` атомарно выдаёт lease
-        одному воркеру; гонка SELECT→UPDATE между процессами исключена.
+        РћРґРёРЅ SQL ``UPDATE вЂ¦ WHERE rowid=(SELECT вЂ¦ LIMIT 1)`` Р°С‚РѕРјР°СЂРЅРѕ РІС‹РґР°С‘С‚ lease
+        РѕРґРЅРѕРјСѓ РІРѕСЂРєРµСЂСѓ; РіРѕРЅРєР° SELECTв†’UPDATE РјРµР¶РґСѓ РїСЂРѕС†РµСЃСЃР°РјРё РёСЃРєР»СЋС‡РµРЅР°.
         """
         qname = queue.value if isinstance(queue, QueueName) else str(queue)
         if qname not in {q.value for q in QueueName}:
@@ -189,7 +189,7 @@ class Orchestrator:
                 WHERE rowid = (
                     SELECT wiq.rowid FROM work_item_queue wiq
                     INNER JOIN work_items wi ON wiq.work_item_id = wi.id
-                    WHERE wiq.queue_name = '{qname}'
+                    WHERE wiq.queue_name = ?
                       AND wiq.lease_owner IS NULL
                       AND wiq.available_at <= strftime('%Y-%m-%dT%H:%M:%f','now')
                       AND wiq.attempts < wiq.max_attempts
@@ -198,6 +198,7 @@ class Orchestrator:
                 )
                 RETURNING work_item_id
                 """,
+            (qname,)
             )
             claimed = cur.fetchone()
             if not claimed:
@@ -243,7 +244,7 @@ class Orchestrator:
                     EventType.TASK_STATUS_CHANGED,
                     "work_item",
                     item["work_item_id"],
-                    f"Ошибка обработки: {e}",
+                    f"РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё: {e}",
                     severity=Severity.ERROR,
                     work_item_id=item["work_item_id"],
                     payload={"queue": queue.value, "error": str(e), "sub": "queue_handler_error"},
@@ -337,9 +338,9 @@ class Orchestrator:
 
     def process_forge_queue(self) -> None:
         """
-        Прогон очереди forge: ``run_forge_queued_runs`` (тот же путь, что после ``forge_started``).
+        РџСЂРѕРіРѕРЅ РѕС‡РµСЂРµРґРё forge: ``run_forge_queued_runs`` (С‚РѕС‚ Р¶Рµ РїСѓС‚СЊ, С‡С‚Рѕ РїРѕСЃР»Рµ ``forge_started``).
 
-        При ``FACTORY_ORCHESTRATOR_ASYNC=1`` выполняется в отдельном потоке (tick не ждёт Qwen).
+        РџСЂРё ``FACTORY_ORCHESTRATOR_ASYNC=1`` РІС‹РїРѕР»РЅСЏРµС‚СЃСЏ РІ РѕС‚РґРµР»СЊРЅРѕРј РїРѕС‚РѕРєРµ (tick РЅРµ Р¶РґС‘С‚ Qwen).
         """
         if not _env_orchestrator_async():
             forge.run_forge_queued_runs(self)
@@ -423,9 +424,9 @@ class Orchestrator:
 
     def process_review_queue(self) -> None:
         """
-        Очередь ``review_inbox`` → ``reviewer.run_review`` (как ``_process_queue(REVIEW_INBOX)``).
+        РћС‡РµСЂРµРґСЊ ``review_inbox`` в†’ ``reviewer.run_review`` (РєР°Рє ``_process_queue(REVIEW_INBOX)``).
 
-        При ``FACTORY_ORCHESTRATOR_ASYNC=1`` — отдельный поток (tick не блокируется на ревью).
+        РџСЂРё ``FACTORY_ORCHESTRATOR_ASYNC=1`` вЂ” РѕС‚РґРµР»СЊРЅС‹Р№ РїРѕС‚РѕРє (tick РЅРµ Р±Р»РѕРєРёСЂСѓРµС‚СЃСЏ РЅР° СЂРµРІСЊСЋ).
         """
         if not _env_orchestrator_async():
             self._process_queue(QueueName.REVIEW_INBOX, self._dispatch_reviewer)
@@ -513,7 +514,7 @@ class Orchestrator:
             _active_review_worker.start()
 
     def _auto_enqueue_ready_atoms(self) -> None:
-        """Атомы ``ready_for_work`` без строки в ``work_item_queue`` → ``forge_inbox`` (автономный режим)."""
+        """РђС‚РѕРјС‹ ``ready_for_work`` Р±РµР· СЃС‚СЂРѕРєРё РІ ``work_item_queue`` в†’ ``forge_inbox`` (Р°РІС‚РѕРЅРѕРјРЅС‹Р№ СЂРµР¶РёРј)."""
         self.conn.execute(
             """
             INSERT INTO work_item_queue (work_item_id, queue_name, priority, available_at, attempts)
@@ -599,11 +600,11 @@ class Orchestrator:
 
     def _escalate_review_rejected_to_judge(self):
         """
-        review_rejected → sent_to_judge → ready_for_judge (st_16).
+        review_rejected в†’ sent_to_judge в†’ ready_for_judge (st_16).
 
-        Вызывается после обработки REVIEW_INBOX в том же тике, чтобы очередь
-        сменилась на judge_inbox и задача не осталась в review_inbox со статусом
-        уже не in_review.
+        Р’С‹Р·С‹РІР°РµС‚СЃСЏ РїРѕСЃР»Рµ РѕР±СЂР°Р±РѕС‚РєРё REVIEW_INBOX РІ С‚РѕРј Р¶Рµ С‚РёРєРµ, С‡С‚РѕР±С‹ РѕС‡РµСЂРµРґСЊ
+        СЃРјРµРЅРёР»Р°СЃСЊ РЅР° judge_inbox Рё Р·Р°РґР°С‡Р° РЅРµ РѕСЃС‚Р°Р»Р°СЃСЊ РІ review_inbox СЃРѕ СЃС‚Р°С‚СѓСЃРѕРј
+        СѓР¶Рµ РЅРµ in_review.
         """
         rows = self.conn.execute(
             "SELECT id FROM work_items WHERE status = 'review_rejected'"
@@ -620,7 +621,7 @@ class Orchestrator:
                     EventType.TASK_STATUS_CHANGED,
                     "work_item",
                     wi_id,
-                    f"sent_to_judge не применён: {msg}",
+                    f"sent_to_judge РЅРµ РїСЂРёРјРµРЅС‘РЅ: {msg}",
                     severity=Severity.WARN,
                     work_item_id=wi_id,
                     payload={"msg": msg, "sub": "orchestrator_escalation_failed"},
@@ -706,7 +707,7 @@ class Orchestrator:
             EventType.TASK_STATUS_CHANGED,
             "system",
             "orchestrator",
-            f"Ожидание сброса лимитов: {wait_seconds:.0f} секунд (до {tomorrow.isoformat()})",
+            f"РћР¶РёРґР°РЅРёРµ СЃР±СЂРѕСЃР° Р»РёРјРёС‚РѕРІ: {wait_seconds:.0f} СЃРµРєСѓРЅРґ (РґРѕ {tomorrow.isoformat()})",
             severity=Severity.INFO,
             payload={
                 "wait_seconds": wait_seconds,
