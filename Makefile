@@ -1,4 +1,4 @@
-.PHONY: test lint coverage docker-build docker-run clean
+.PHONY: test lint coverage security docker-build docker-run clean
 
 test:
 	python -m pytest factory/tests/ -v --tb=short
@@ -12,6 +12,14 @@ lint:
 		pylint factory/; \
 	else \
 		python -m pip install flake8 && flake8 factory/; \
+	fi
+
+
+security:
+	@if command -v bandit >/dev/null 2>&1; then \
+		bandit -r factory/; \
+	else \
+		echo "bandit не установлен, используй pip install bandit"; \
 	fi
 
 coverage:
