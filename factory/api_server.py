@@ -346,7 +346,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         status_code=500,
         content={
             "error": "Internal Server Error",
-            "detail": str(exc) or exc.__class__.__name__,
+            "detail": "Internal server error",
             "path": request.url.path,
         },
     )
