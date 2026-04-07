@@ -32,3 +32,5 @@ fix_test.py
 query.py
 e2e_chain_decomposition.json
 .pytest_cache/
+
+.comet/
