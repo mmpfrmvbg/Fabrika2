@@ -39,8 +39,6 @@ from .config import (
     API_HOST,
     API_PORT,
     ORCHESTRATOR_TICK_INTERVAL_SECONDS,
-    QWEN_DECOMPOSE_TIMEOUT_SECONDS,
-    QWEN_FIX_TIMEOUT_SECONDS,
     AccountManager,
     load_dotenv,
     get_factory_api_key,
@@ -1223,7 +1221,7 @@ def create_work_item_legacy(
                 (idempotency_key,),
             ).fetchone()
             if existing:
-                return JSONResponse(
+                return JSONResponse(  # type: ignore[return-value]
                     status_code=409,
                     content={"error": "duplicate", "existing_id": existing["id"]},
                 )
@@ -1276,7 +1274,7 @@ def create_work_item_legacy(
                 (idempotency_key,),
             ).fetchone()
             if existing:
-                return JSONResponse(
+                return JSONResponse(  # type: ignore[return-value]
                     status_code=409,
                     content={"error": "duplicate", "existing_id": existing["id"]},
                 )

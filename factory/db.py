@@ -446,7 +446,7 @@ def _advisory_file_lock(
             start = time.time()
             while True:
                 try:
-                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore[attr-defined]
                     break
                 except BlockingIOError:
                     if time.time() - start >= timeout_sec:
@@ -468,7 +468,7 @@ def _advisory_file_lock(
             else:
                 import fcntl
 
-                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)  # type: ignore[attr-defined]
         finally:
             try:
                 fh.close()
