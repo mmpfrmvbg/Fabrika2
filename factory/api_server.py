@@ -2198,12 +2198,12 @@ Vision: {title}
         
         return {"hierarchy": hierarchy, "ok": True}
         
-    except json.JSONDecodeError as e:
-        _LOG.error("Qwen decompose JSON error: %s", e)
-        raise HTTPException(status_code=500, detail={"error": "Invalid JSON from Qwen", "message": str(e)})
-    except Exception as e:
-        _LOG.error("Qwen decompose error: %s", e)
-        raise HTTPException(status_code=500, detail={"error": "Decompose failed", "message": str(e)})
+    except json.JSONDecodeError:
+        _LOG.exception("Qwen decompose JSON error")
+        raise HTTPException(status_code=500, detail={"error": "Invalid JSON from Qwen"})
+    except Exception:
+        _LOG.exception("Qwen decompose error")
+        raise HTTPException(status_code=500, detail={"error": "Decompose failed"})
 
 
 # ═══════════════════════════════════════════════════════
@@ -2220,8 +2220,9 @@ async def chat_qwen_create(request: Request) -> dict[str, str]:
 
     try:
         raw = await request.json()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+    except Exception:
+        _LOG.exception("Invalid JSON in /api/chat/qwen request")
+        raise HTTPException(status_code=400, detail="Invalid request body")
     try:
         payload = ChatCreateRequest.model_validate(raw)
     except ValidationError as e:
@@ -2366,12 +2367,12 @@ def qwen_fix_endpoint(
         
         return {"fix": fix, "ok": True}
         
-    except json.JSONDecodeError as e:
-        _LOG.error("Qwen fix JSON error: %s", e)
-        raise HTTPException(status_code=500, detail={"error": "Invalid JSON from Qwen", "message": str(e)})
-    except Exception as e:
-        _LOG.error("Qwen fix error: %s", e)
-        raise HTTPException(status_code=500, detail={"error": "Fix failed", "message": str(e)})
+    except json.JSONDecodeError:
+        _LOG.exception("Qwen fix JSON error")
+        raise HTTPException(status_code=500, detail={"error": "Invalid JSON from Qwen"})
+    except Exception:
+        _LOG.exception("Qwen fix error")
+        raise HTTPException(status_code=500, detail={"error": "Fix failed"})
 
 
 def main(argv: list[str] | None = None) -> None:
