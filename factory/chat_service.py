@@ -7,6 +7,7 @@
 """
 import asyncio
 import json
+import logging
 import uuid
 import time
 from typing import AsyncGenerator, Callable, Optional
@@ -20,6 +21,7 @@ from .models import EventType, Severity
 # Хранилище активных чат-сессий с TTL
 _active_chats: dict[str, dict] = {}
 _CHAT_TTL_SECONDS = 300
+_LOGGER = logging.getLogger(__name__)
 
 
 def _cleanup_expired_chats():
@@ -97,7 +99,8 @@ class ChatService:
             
         except Exception as e:
             session['status'] = 'error'
-            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+            _LOGGER.exception("stream_chat_response failed: %s", e)
+            yield f"data: {json.dumps({'type': 'error', 'error': 'Internal server error'})}\n\n"
     
     def _run_qwen_chat(
         self,
