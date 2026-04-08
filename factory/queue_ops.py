@@ -27,7 +27,14 @@ def claim_forge_inbox_atom(conn: sqlite3.Connection, agent_id: str) -> str | Non
             SELECT wiq.rowid FROM work_item_queue wiq
             INNER JOIN work_items wi ON wiq.work_item_id = wi.id
             WHERE wiq.queue_name = ?
-              AND wiq.lease_owner IS NULL
+              AND (
+                    wiq.lease_owner IS NULL
+                    OR (
+                        wiq.lease_owner IS NOT NULL
+                        AND wiq.lease_until IS NOT NULL
+                        AND wiq.lease_until < strftime('%Y-%m-%dT%H:%M:%f','now')
+                    )
+                  )
               AND wiq.available_at <= strftime('%Y-%m-%dT%H:%M:%f','now')
               AND wiq.attempts < wiq.max_attempts
               AND wi.status = 'ready_for_work'

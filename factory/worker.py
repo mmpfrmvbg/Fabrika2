@@ -99,9 +99,10 @@ def recover_stuck_running_work_items(
     *,
     worker_id: str,
 ) -> int:
-    cutoff_expr = f"-{int(_STUCK_WORK_ITEM_TIMEOUT_SEC // 60)} minutes"
+    timeout_seconds = max(1, int(_STUCK_WORK_ITEM_TIMEOUT_SEC))
+    cutoff_expr = f"-{timeout_seconds} seconds"
     rows = conn.execute(
-        f"""
+        """
         UPDATE work_items
         SET status = COALESCE(NULLIF(previous_status, ''), 'ready_for_work'),
             previous_status = status,
@@ -110,10 +111,11 @@ def recover_stuck_running_work_items(
         WHERE status = 'running'
           AND (
                 last_heartbeat_at IS NULL
-                OR replace(last_heartbeat_at, 'T', ' ') < datetime('now', '{cutoff_expr}')
+                OR replace(last_heartbeat_at, 'T', ' ') < datetime('now', ?)
               )
         RETURNING id, status, previous_status, last_heartbeat_at
-        """
+        """,
+        (cutoff_expr,),
     ).fetchall()
     for row in rows:
         conn.execute(
@@ -188,9 +190,13 @@ def worker_iteration(factory: dict[str, Any], worker_id: str) -> bool:
             """
         ).fetchone()
         if orphan:
-            forge.run_forge_queued_runs(orch)
+            orphan_wi_id = orphan["work_item_id"]
+            _touch_work_item_heartbeat(conn, orphan_wi_id)
             conn.commit()
-            drain_atom_downstream(orch, orphan["work_item_id"])
+            with _heartbeat_loop(db_path, orphan_wi_id):
+                forge.run_forge_queued_runs(orch)
+                conn.commit()
+                drain_atom_downstream(orch, orphan_wi_id)
             conn.commit()
             return True
         return False

@@ -6,7 +6,7 @@ from pathlib import Path
 from factory.db import init_db
 from factory.models import EventType
 from factory.queue_ops import claim_forge_inbox_atom
-from factory.worker import run_worker_loop, worker_iteration
+from factory.worker import recover_stuck_running_work_items, run_worker_loop, worker_iteration
 import factory.worker as worker_module
 
 
@@ -249,3 +249,108 @@ def test_worker_iteration_marks_failed_actual_batch_run_item(tmp_path: Path, mon
     assert claimed_status == "in_progress"
     assert failed_status in {"ready_for_work", "dead"}
     assert failed_lease_owner is None
+
+
+def test_claim_forge_inbox_reclaims_expired_lease(tmp_path: Path) -> None:
+    conn = init_db(tmp_path / "expired_lease_claim.db")
+    now = "2026-04-01T00:00:00.000000Z"
+    conn.execute(
+        """
+        INSERT INTO work_items (
+            id, parent_id, root_id, kind, title, description, status,
+            creator_role, owner_role, planning_depth, priority, created_at, updated_at
+        ) VALUES ('atom_expired', NULL, 'atom_expired', 'atom', 'Expired lease atom', '', 'ready_for_work',
+                  'creator', 'forge', 0, 1, ?, ?)
+        """,
+        (now, now),
+    )
+    conn.execute(
+        """
+        INSERT INTO work_item_queue (
+            work_item_id, queue_name, priority, available_at, lease_owner, lease_until
+        )
+        VALUES (
+            'atom_expired', 'forge_inbox', 100, strftime('%Y-%m-%dT%H:%M:%f','now','-1 minute'),
+            'dead-worker', strftime('%Y-%m-%dT%H:%M:%f','now','-10 minutes')
+        )
+        """
+    )
+    conn.commit()
+
+    claimed = claim_forge_inbox_atom(conn, "worker-reclaimer")
+    assert claimed == "atom_expired"
+
+
+def test_recover_stuck_running_uses_seconds_timeout_below_minute(tmp_path: Path, monkeypatch) -> None:
+    conn = init_db(tmp_path / "stuck_seconds_timeout.db")
+    logger = worker_module.FactoryLogger(conn)
+    conn.execute(
+        """
+        INSERT INTO work_items (
+            id, parent_id, root_id, kind, title, description, status,
+            previous_status, creator_role, owner_role, planning_depth, priority, last_heartbeat_at
+        )
+        VALUES (
+            'wi_secs', NULL, 'wi_secs', 'atom', 'Secs', '', 'running',
+            'ready_for_work', 'planner', 'forge', 0, 100,
+            strftime('%Y-%m-%dT%H:%M:%f','now','-40 seconds')
+        )
+        """
+    )
+    conn.commit()
+    monkeypatch.setattr(worker_module, "_STUCK_WORK_ITEM_TIMEOUT_SEC", 30)
+
+    recovered = recover_stuck_running_work_items(conn, logger, worker_id="worker-seconds")
+    conn.commit()
+
+    assert recovered == 1
+    row = conn.execute("SELECT status FROM work_items WHERE id='wi_secs'").fetchone()
+    assert row["status"] == "ready_for_work"
+
+
+def test_worker_iteration_orphan_path_starts_heartbeat(tmp_path: Path, monkeypatch) -> None:
+    class FakeConn:
+        def __init__(self) -> None:
+            self.commits = 0
+
+        def execute(self, _sql: str, _params=()):
+            class _Row:
+                def fetchone(self_inner):
+                    return {"work_item_id": "wi_orphan"}
+
+            return _Row()
+
+        def commit(self) -> None:
+            self.commits += 1
+
+    fake_conn = FakeConn()
+    factory = {"conn": fake_conn, "logger": object(), "orchestrator": object(), "db_path": str(tmp_path / "x.db")}
+    touched: list[str] = []
+    hb_loops: list[str] = []
+    downstream: list[str] = []
+
+    monkeypatch.setattr(worker_module, "claim_forge_inbox_atom", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(worker_module, "_apply_worker_sqlite_pragmas", lambda _conn: None)
+    monkeypatch.setattr(worker_module, "_touch_work_item_heartbeat", lambda _conn, wi_id: touched.append(wi_id))
+
+    class _HB:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(
+        worker_module,
+        "_heartbeat_loop",
+        lambda _db_path, wi_id: hb_loops.append(wi_id) or _HB(),
+    )
+    monkeypatch.setattr(worker_module.forge, "run_forge_queued_runs", lambda _orch: None)
+    monkeypatch.setattr(worker_module, "drain_atom_downstream", lambda _orch, wi_id: downstream.append(wi_id))
+
+    worked = worker_iteration(factory, "worker-orphan")
+
+    assert worked is True
+    assert touched == ["wi_orphan"]
+    assert hb_loops == ["wi_orphan"]
+    assert downstream == ["wi_orphan"]
