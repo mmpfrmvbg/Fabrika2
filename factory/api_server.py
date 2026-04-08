@@ -952,17 +952,20 @@ def patch_work_item(
             )
         if title is not None and description is not None:
             conn.execute(
-                "UPDATE work_items SET title = ?, description = ? WHERE id = ?",
+                "UPDATE work_items SET title = ?, description = ?, "
+                "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE id = ?",
                 (str(title).strip() or row["title"], str(description), wi_id),
             )
         elif title is not None:
             conn.execute(
-                "UPDATE work_items SET title = ? WHERE id = ?",
+                "UPDATE work_items SET title = ?, "
+                "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE id = ?",
                 (str(title).strip() or row["title"], wi_id),
             )
         elif description is not None:
             conn.execute(
-                "UPDATE work_items SET description = ? WHERE id = ?",
+                "UPDATE work_items SET description = ?, "
+                "updated_at = strftime('%Y-%m-%dT%H:%M:%f', 'now') WHERE id = ?",
                 (str(description), wi_id),
             )
         else:
