@@ -2298,10 +2298,12 @@ def _include_domain_routers() -> None:
     from .routers.chat import build_router as build_chat_router
     from .routers.orchestrator import build_router as build_orchestrator_router
     from .routers.qwen import build_router as build_qwen_router
+    from .routers.runs import build_router as build_runs_router
     from .routers.work_items import build_router as build_work_items_router
 
     app.include_router(build_admin_health_router())
     app.include_router(build_work_items_router())
+    app.include_router(build_runs_router())
     app.include_router(build_orchestrator_router())
     app.include_router(build_chat_router())
     app.include_router(build_qwen_router())
