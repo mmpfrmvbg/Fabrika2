@@ -806,6 +806,8 @@ def orchestrator_health() -> dict[str, Any]:
 
 def orchestrator_tick(_: None = Depends(require_api_key)) -> dict[str, Any]:
     processed = _orch_thread.tick_once()
+    if processed:
+        _orch_thread.items_processed_total += sum(processed.values())
     conn = _open_ro()
     try:
         qd = _queue_depths_from_conn(conn)
