@@ -27,16 +27,14 @@ _API_ENDPOINT_NAMES: tuple[str, ...] = (
     "api_analytics",
     "stats",
     "api_workers_status",
+    "journal",
+    "judgements",
+    "judge_verdicts",
+    "tree",
     "list_improvements",
     "approve_improvement",
     "reject_improvement",
     "convert_improvement",
-    "queue_forge_inbox",
-    "fsm_work_item",
-    "agents_list_compat",
-    "failure_clusters",
-    "failures",
-    "hr_stub",
     "visions",
     "create_vision",
     "decompose_vision_endpoint",
@@ -78,6 +76,20 @@ def __getattr__(name: str) -> Callable[..., Any]:
         from .routers import journal
 
         return getattr(journal, name)
+    if name in {
+        "api_analytics",
+        "stats",
+        "api_workers_status",
+        "queue_forge_inbox",
+        "fsm_work_item",
+        "agents_list_compat",
+        "failure_clusters",
+        "failures",
+        "hr_stub",
+    }:
+        from .routers import analytics
+
+        return getattr(analytics, name)
     if name in _API_ENDPOINT_NAMES:
         return getattr(_api_server(), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
