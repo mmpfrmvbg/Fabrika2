@@ -365,12 +365,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
 
 
-@app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/api/health")
 def api_health() -> dict[str, Any]:
     uptime_seconds = max(0.0, time.monotonic() - _API_STARTED_AT_MONOTONIC)
     db_connected = False
@@ -683,7 +681,6 @@ def _orchestrator_heartbeat_from_conn(conn: sqlite3.Connection) -> dict[str, Any
     }
 
 
-@app.get("/api/metrics")
 def api_metrics() -> dict[str, Any]:
     conn = _open_ro()
     try:
@@ -754,7 +751,6 @@ def api_metrics() -> dict[str, Any]:
         conn.close()
 
 
-@app.get("/api/orchestrator/status")
 def orchestrator_status() -> dict[str, Any]:
     conn = _open_ro()
     try:
@@ -771,19 +767,16 @@ def orchestrator_status() -> dict[str, Any]:
     }
 
 
-@app.post("/api/orchestrator/start")
 def orchestrator_start(_: None = Depends(require_api_key)) -> dict[str, Any]:
     _orch_thread.start()
     return orchestrator_status()
 
 
-@app.post("/api/orchestrator/stop")
 def orchestrator_stop(_: None = Depends(require_api_key)) -> dict[str, Any]:
     _orch_thread.stop()
     return orchestrator_status()
 
 
-@app.get("/api/orchestrator/health")
 def orchestrator_health() -> dict[str, Any]:
     """Heartbeat по event_log (actor_role=orchestrator), не путать с /api/orchestrator/status (поток tick)."""
     conn = _open_ro()
@@ -794,7 +787,6 @@ def orchestrator_health() -> dict[str, Any]:
         conn.close()
 
 
-@app.post("/api/orchestrator/tick")
 def orchestrator_tick(_: None = Depends(require_api_key)) -> dict[str, Any]:
     processed = _orch_thread.tick_once()
     conn = _open_ro()
@@ -815,7 +807,6 @@ def orchestrator_tick(_: None = Depends(require_api_key)) -> dict[str, Any]:
     }
 
 
-@app.get("/api/work-items")
 def list_work_items(
     status: str | None = None,
     parent_id: str | None = None,
@@ -834,7 +825,6 @@ def list_work_items(
         conn.close()
 
 
-@app.get("/api/export/work-items")
 def export_work_items(
     format: str = Query("json", pattern="^(json|csv)$"),  # noqa: A002
 ) -> Response:
@@ -860,7 +850,6 @@ def export_work_items(
     )
 
 
-@app.get("/api/work-items/tree")
 def work_items_tree_endpoint() -> dict[str, Any]:
     """Полное дерево задач (корни без parent_id). Должен быть объявлен до ``/api/work-items/{wi_id}``."""
     conn = _open_ro()
@@ -876,7 +865,6 @@ _EDITABLE_STATUSES = frozenset(
 )
 
 
-@app.post("/api/work-items/{wi_id}/cancel")
 def post_work_item_cancel(
     wi_id: str = FastPath(..., min_length=1, max_length=128),
     _: None = Depends(require_api_key),
@@ -907,7 +895,6 @@ def post_work_item_cancel(
         conn.close()
 
 
-@app.post("/api/work-items/{wi_id}/archive")
 def post_work_item_archive(
     wi_id: str = FastPath(..., min_length=1, max_length=128),
     _: None = Depends(require_api_key),
@@ -938,7 +925,6 @@ def post_work_item_archive(
         conn.close()
 
 
-@app.patch("/api/work-items/{wi_id}")
 def patch_work_item(
     wi_id: str = FastPath(..., min_length=1, max_length=128),
     body: WorkItemPatchRequest = Body(...),
@@ -1003,7 +989,6 @@ def patch_work_item(
         conn.close()
 
 
-@app.delete("/api/work-items/{wi_id}")
 def delete_work_item_endpoint(
     wi_id: str = FastPath(..., min_length=1, max_length=128),
     _: None = Depends(require_api_key),
@@ -1022,7 +1007,6 @@ def delete_work_item_endpoint(
         conn.close()
 
 
-@app.post("/api/bulk/archive")
 def post_bulk_archive(
     body: BulkArchiveRequest = Body(default=BulkArchiveRequest()),
     _: None = Depends(require_api_key),
@@ -1063,7 +1047,6 @@ def post_bulk_archive(
         conn.close()
 
 
-@app.post("/api/work-items/{wi_id}/run")
 def post_work_item_run(
     wi_id: str = FastPath(..., min_length=1, max_length=128),
     _: None = Depends(require_api_key),
@@ -1085,7 +1068,6 @@ def post_work_item_run(
     }
 
 
-@app.post("/api/tasks/{wi_id}/forge-run")
 def post_tasks_forge_run_compat(
     wi_id: str = FastPath(..., min_length=1, max_length=128),
     _: None = Depends(require_api_key),
@@ -1094,7 +1076,6 @@ def post_tasks_forge_run_compat(
     return post_work_item_run(wi_id)
 
 
-@app.get("/api/work-items/{wi_id}")
 def get_work_item(wi_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
     conn = _open_ro()
     try:
@@ -1151,7 +1132,6 @@ def get_work_item(wi_id: str = FastPath(..., min_length=1, max_length=128)) -> d
         conn.close()
 
 
-@app.get("/api/tasks/{wi_id}")
 def get_task_bundle(wi_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
     """Совместимость с factory-os.html (openDetail)."""
     conn = _open_ro()
@@ -1195,7 +1175,6 @@ def get_task_bundle(wi_id: str = FastPath(..., min_length=1, max_length=128)) ->
         conn.close()
 
 
-@app.get("/api/work_items")
 def work_items_legacy(
     id: str | None = None,
     status: str | None = None,
@@ -1219,7 +1198,6 @@ def work_items_legacy(
         conn.close()
 
 
-@app.post("/api/work_items")
 def create_work_item_legacy(
     body: WorkItemCreateRequest | dict[str, Any] = Body(...),
     _: None = Depends(require_api_key),
@@ -1296,7 +1274,6 @@ def create_work_item_legacy(
         conn.close()
 
 
-@app.post("/api/runs")
 def create_run(
     body: RunCreateRequest = Body(...),
     _: None = Depends(require_api_key),
@@ -1342,7 +1319,6 @@ def create_run(
     }
 
 
-@app.get("/api/work-items/{wi_id}/runs")
 def runs_for_work_item(wi_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
     conn = _open_ro()
     try:
@@ -1360,7 +1336,6 @@ def runs_for_work_item(wi_id: str = FastPath(..., min_length=1, max_length=128))
         conn.close()
 
 
-@app.get("/api/runs")
 def list_runs(
     work_item_id: str | None = None,
     limit: int = Query(120, ge=1, le=500),
@@ -1391,7 +1366,6 @@ def list_runs(
         conn.close()
 
 
-@app.get("/api/runs/{run_id}")
 def get_run_detail(run_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
     conn = _open_ro()
     try:
@@ -1425,7 +1399,6 @@ def get_run_detail(run_id: str = FastPath(..., min_length=1, max_length=128)) ->
         conn.close()
 
 
-@app.get("/api/runs/{run_id}/steps")
 def get_run_steps(run_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
     conn = _open_ro()
     try:
@@ -1441,7 +1414,6 @@ def get_run_steps(run_id: str = FastPath(..., min_length=1, max_length=128)) -> 
         conn.close()
 
 
-@app.get("/api/runs/{run_id}/effective")
 def get_effective_run_id(run_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
     conn = _open_ro()
     try:
@@ -2118,7 +2090,6 @@ def create_vision(
 # VISION DECOMPOSE (Qwen)
 # ═══════════════════════════════════════════════════════
 
-@app.post("/api/visions/{vision_id}/decompose")
 def decompose_vision_endpoint(
     vision_id: str = FastPath(..., min_length=1, max_length=128),
     body: VisionRequest | dict[str, Any] = Body(...),
@@ -2210,7 +2181,6 @@ Vision: {title}
 # CHAT (Qwen SSE)
 # ═══════════════════════════════════════════════════════
 
-@app.post("/api/chat/qwen")
 async def chat_qwen_create(request: Request) -> dict[str, str]:
     """
     Создать сессию чата с Qwen.
@@ -2266,7 +2236,6 @@ async def chat_qwen_create(request: Request) -> dict[str, str]:
     return {"chat_id": chat_id}
 
 
-@app.get("/api/chat/qwen/{chat_id}/stream")
 async def chat_qwen_stream(
     chat_id: str = FastPath(..., min_length=1, max_length=128),
 ) -> StreamingResponse:
@@ -2304,7 +2273,6 @@ async def chat_qwen_stream(
 # QWEN FIX (Auto-fix for Forge errors)
 # ═══════════════════════════════════════════════════════
 
-@app.post("/api/qwen/fix")
 def qwen_fix_endpoint(
     body: QwenFixRequest = Body(...),
     _: None = Depends(require_api_key),
@@ -2374,6 +2342,21 @@ def qwen_fix_endpoint(
         _LOG.exception("Qwen fix error")
         raise HTTPException(status_code=500, detail={"error": "Fix failed"})
 
+
+
+def _include_domain_routers() -> None:
+    from .routers.admin_health import build_router as build_admin_health_router
+    from .routers.chat import build_router as build_chat_router
+    from .routers.qwen import build_router as build_qwen_router
+    from .routers.work_items import build_router as build_work_items_router
+
+    app.include_router(build_admin_health_router())
+    app.include_router(build_work_items_router())
+    app.include_router(build_chat_router())
+    app.include_router(build_qwen_router())
+
+
+_include_domain_routers()
 
 def main(argv: list[str] | None = None) -> None:
     import uvicorn
