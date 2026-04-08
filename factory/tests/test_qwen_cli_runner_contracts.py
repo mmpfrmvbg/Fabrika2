@@ -14,7 +14,7 @@ from subprocess import CompletedProcess, TimeoutExpired
 from unittest.mock import patch
 
 import factory.qwen_cli_runner as qwen_cli_runner
-from factory.qwen_cli_runner import _build_extra_argv
+from factory.qwen_cli_runner import _build_extra_argv, looks_rate_limited
 
 from factory.composition import wire
 from factory.models import Role, RunType
@@ -249,6 +249,66 @@ class QwenCliRunnerRateLimitAndPoolTest(unittest.TestCase):
         self.assertTrue(fr.exhausted_accounts)
         self.assertFalse(fr.max_tries_reached)
         self.assertEqual(len(fr.accounts_tried), 3)
+
+
+class QwenCliRunnerRateLimitDetectionTest(unittest.TestCase):
+    def test_looks_rate_limited_detects_known_markers(self) -> None:
+        self.assertTrue(looks_rate_limited("HTTP 429 too many requests"))
+        self.assertTrue(looks_rate_limited("Quota exceeded for this project"))
+        self.assertTrue(looks_rate_limited("RESOURCE EXHAUSTED"))
+
+    def test_looks_rate_limited_false_for_regular_error(self) -> None:
+        self.assertFalse(looks_rate_limited(""))
+        self.assertFalse(looks_rate_limited("build failed: missing target"))
+
+
+class QwenCliRunnerMarkRateLimitedTest(unittest.TestCase):
+    def setUp(self) -> None:
+        reload_config_with_account_keys(2)
+        self._fd, self._raw = tempfile.mkstemp(prefix="factory_ut_qwen_", suffix=".db")
+        os.close(self._fd)
+        self.db_path = Path(self._raw)
+
+    def tearDown(self) -> None:
+        os.environ.pop("FACTORY_QWEN_MAX_ACCOUNT_TRIES", None)
+        reload_single_test_account()
+        try:
+            self.db_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def test_run_qwen_cli_marks_account_cooling_down_on_rate_limit(self) -> None:
+        os.environ["FACTORY_QWEN_DRY_RUN"] = "0"
+        os.environ["FACTORY_QWEN_MAX_ACCOUNT_TRIES"] = "1"
+
+        f = wire(self.db_path)
+        _stub_wi_and_run(f["conn"])
+        rate_limited = CompletedProcess(
+            args=[], returncode=1, stdout=b"", stderr=b"HTTP 429 too many requests"
+        )
+
+        with patch("factory.qwen_cli_runner.subprocess.run", return_value=rate_limited):
+            fr = qwen_cli_runner.run_qwen_cli(
+                conn=f["conn"],
+                account_manager=f["accounts"],
+                logger=f["logger"],
+                work_item_id=WI_STUB,
+                run_id=RUN_STUB,
+                title="t",
+                description="d",
+            )
+
+        first_account = fr.accounts_tried[0]
+        row = f["conn"].execute(
+            "SELECT account_status, last_error FROM api_accounts WHERE id = ?",
+            (first_account,),
+        ).fetchone()
+        f["conn"].close()
+
+        self.assertFalse(fr.ok)
+        self.assertTrue(fr.max_tries_reached)
+        self.assertEqual(row["account_status"], "cooling_down")
+        self.assertIn("429", row["last_error"])
 
 
 if __name__ == "__main__":
