@@ -39,6 +39,8 @@ def test_domain_router_endpoints_are_registered() -> None:
 
     assert "GET" in route_map["/api/health"]
     assert "GET" in route_map["/api/work-items"]
+    assert "GET" in route_map["/api/runs"]
+    assert "GET" in route_map["/api/events"]
     assert "GET" in route_map["/api/journal"]
     assert "POST" in route_map["/api/chat/qwen"]
     assert "POST" in route_map["/api/qwen/fix"]
@@ -86,6 +88,7 @@ def test_router_endpoints_are_reachable_with_api_key(
         "chat.py",
         "orchestrator.py",
         "qwen.py",
+        "runs.py",
         "work_items.py",
     ],
 )

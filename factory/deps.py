@@ -22,6 +22,7 @@ _API_ENDPOINT_NAMES: tuple[str, ...] = (
     "orchestrator_tick",
     "chat_qwen_create",
     "chat_qwen_stream",
+    "list_events",
     "stream_events",
     "journal",
     "judgements",
