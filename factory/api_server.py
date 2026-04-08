@@ -60,8 +60,6 @@ from .work_item_api_ops import (
     delete_work_item_subtree,
     list_done_vision_roots_ready_to_archive,
 )
-from .agents.planner import decompose_with_planner
-from .contracts.planner import PlannerInput
 from .qwen_cli_runner import run_qwen_cli
 from .chat_service import ChatService
 from .logging_config import configure_logging
@@ -70,7 +68,6 @@ from .schemas import (
     ChatCreateRequest,
     QwenFixRequest,
     RunCreateRequest,
-    VisionRequest,
     WorkItemCreateRequest,
     WorkItemPatchRequest,
 )
@@ -1733,249 +1730,6 @@ def hr_stub() -> dict[str, Any]:
     return {"policies": [], "proposals": []}
 
 
-def visions() -> dict[str, Any]:
-    conn = _open_ro()
-    try:
-        rows = conn.execute(
-            "SELECT id, title, status, created_at FROM work_items WHERE kind = 'vision' ORDER BY created_at DESC"
-        ).fetchall()
-        items = []
-        for r in rows:
-            vid = r["id"]
-            total_desc = conn.execute(
-                "SELECT COUNT(*) AS c FROM work_items WHERE root_id = ? AND id != ?",
-                (vid, vid),
-            ).fetchone()["c"]
-            done_desc = conn.execute(
-                """
-                SELECT COUNT(*) AS c FROM work_items
-                WHERE root_id = ? AND id != ?
-                  AND status IN ('done','cancelled','archived')
-                """,
-                (vid, vid),
-            ).fetchone()["c"]
-            atoms_total = conn.execute(
-                """
-                SELECT COUNT(*) AS c FROM work_items
-                WHERE root_id = ? AND id != ? AND kind = 'atom'
-                """,
-                (vid, vid),
-            ).fetchone()["c"]
-            atoms_done = conn.execute(
-                """
-                SELECT COUNT(*) AS c FROM work_items
-                WHERE root_id = ? AND id != ? AND kind = 'atom' AND status = 'done'
-                """,
-                (vid, vid),
-            ).fetchone()["c"]
-            pct = int(round((done_desc / total_desc) * 100)) if total_desc else 0
-            atom_pct = int(round((atoms_done / atoms_total) * 100)) if atoms_total else 0
-            items.append(
-                {
-                    "id": r["id"],
-                    "title": r["title"],
-                    "status": r["status"],
-                    "created_at": r["created_at"],
-                    "progress": {
-                        "total_descendants": int(total_desc),
-                        "done_descendants": int(done_desc),
-                        "pct": pct,
-                        "atoms_total": int(atoms_total),
-                        "atoms_done": int(atoms_done),
-                        "atoms_pct": atom_pct,
-                    },
-                }
-            )
-        return {"items": items}
-    finally:
-        conn.close()
-
-
-def create_vision(
-    body: VisionRequest | dict[str, Any] = Body(...),
-    _: None = Depends(require_api_key),
-) -> dict[str, Any]:
-    """
-    Создаёт Vision и запускает planner (синхронно, MVP).
-    Ответ: ``ok``, ``id``, ``title``, ``tree`` (один корень Vision с детьми), ``tree_stats``, ``reasoning``.
-    """
-    payload = body if isinstance(body, VisionRequest) else VisionRequest.model_validate(body)
-    title = payload.title.strip()
-    if not title:
-        raise HTTPException(status_code=400, detail={"error": "title is required"})
-    description = payload.description.strip() if payload.description is not None else None
-
-    conn: sqlite3.Connection | None = None
-    try:
-        from .db import init_db  # lazy import
-
-        # ensure schema exists + seed accounts/agents on a dedicated connection
-        # (если оркестратор уже держит write-транзакцию, DDL может попасть в lock;
-        #  в этом случае предполагаем, что схема уже создана при startup).
-        try:
-            tmp = init_db(_db_path())
-            tmp.close()
-        except sqlite3.OperationalError as e:
-            if "locked" not in str(e).lower():
-                raise
-
-        conn = _open_rw()
-        logger = FactoryLogger(conn)
-        ops = WorkItemOps(conn, logger)
-        vision_id = ops.create_vision(title, description, auto_commit=False)
-        logger.log(
-            EventType.VISION_CREATED,
-            "work_item",
-            vision_id,
-            "Vision created via API",
-            work_item_id=vision_id,
-            actor_role=Role.CREATOR.value,
-            payload={"title": title, "description": description, "source": "api"},
-            tags=["api", "vision"],
-        )
-        out = decompose_with_planner(
-            conn=conn,
-            logger=logger,
-            inp=PlannerInput(
-                work_item_id=vision_id,
-                title=title,
-                description=description or "",
-                kind="vision",
-                current_depth=0,
-                max_depth=4,
-            ),
-        )
-        # stats: из контракта planner output
-        def _stats(items) -> dict[str, int]:
-            c = {"epics": 0, "stories": 0, "tasks": 0, "atoms": 0}
-
-            def walk(it):
-                k = it.kind
-                if k == "epic":
-                    c["epics"] += 1
-                elif k == "story":
-                    c["stories"] += 1
-                elif k == "task":
-                    c["tasks"] += 1
-                elif k == "atom":
-                    c["atoms"] += 1
-                for ch in it.children:
-                    walk(ch)
-
-            for it in items:
-                walk(it)
-            return c
-        stats = _stats(out.items)
-        conn.commit()
-        root_node = subtree_for_root_id(conn, vision_id)
-        tree_payload: list[dict[str, Any]] = [root_node] if root_node else []
-        return {
-            "ok": True,
-            "id": vision_id,
-            "title": title,
-            "tree": tree_payload,
-            "tree_stats": stats,
-            "reasoning": out.reasoning,
-        }
-    finally:
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception as e:
-                _LOG.debug("Failed to close vision creation DB connection: %s", e, exc_info=True)
-
-
-# ═══════════════════════════════════════════════════════
-# VISION DECOMPOSE (Qwen)
-# ═══════════════════════════════════════════════════════
-
-def decompose_vision_endpoint(
-    vision_id: str = FastPath(..., min_length=1, max_length=128),
-    body: VisionRequest | dict[str, Any] = Body(...),
-    _: None = Depends(require_api_key),
-) -> dict[str, Any]:
-    """
-    Авто-декомпозиция Vision через Qwen.
-    Возвращает иерархию: epics → stories → tasks → atoms.
-    """
-    payload = body if isinstance(body, VisionRequest) else VisionRequest.model_validate(body)
-    title = payload.title.strip()
-    description = (payload.description or "").strip()
-    
-    if not title:
-        raise HTTPException(status_code=400, detail={"error": "title is required"})
-    
-    # Промпт для Qwen
-    prompt = f"""
-Декомпозируй задачу на иерархию Epic → Story → Task → Atom.
-
-Vision: {title}
-Описание: {description}
-
-Верни ТОЛЬКО JSON без markdown:
-{{
-  "epics": [
-    {{
-      "title": "Epic title",
-      "description": "Epic description",
-      "stories": [
-        {{
-          "title": "Story title",
-          "description": "Story description",
-          "tasks": [
-            {{
-              "title": "Task title",
-              "description": "Task description",
-              "atoms": [
-                {{
-                  "title": "Atom title",
-                  "description": "Atom description",
-                  "files": ["path/to/file.py"]
-                }}
-              ]
-            }}
-          ]
-        }}
-      ]
-    }}
-  ]
-}}
-"""
-    
-    try:
-        # Вызов Qwen CLI
-        with _open_rw() as conn:
-            logger = FactoryLogger(conn)
-            am = AccountManager(conn, logger)
-            result = run_qwen_cli(
-                conn=conn,
-                account_manager=am,
-                logger=logger,
-                work_item_id="api_decompose_preview",
-                title=title,
-                description=description,
-                full_prompt=prompt,
-            )
-        result_text = result.stdout or result.stderr or ""
-        
-        # Парсинг JSON ответа
-        import re
-        json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
-        if json_match:
-            hierarchy = json.loads(json_match.group())
-        else:
-            hierarchy = json.loads(result_text)
-        
-        return {"hierarchy": hierarchy, "ok": True}
-        
-    except json.JSONDecodeError:
-        _LOG.exception("Qwen decompose JSON error")
-        raise HTTPException(status_code=500, detail={"error": "Invalid JSON from Qwen"})
-    except Exception:
-        _LOG.exception("Qwen decompose error")
-        raise HTTPException(status_code=500, detail={"error": "Decompose failed"})
-
-
 # ═══════════════════════════════════════════════════════
 # CHAT (Qwen SSE)
 # ═══════════════════════════════════════════════════════
@@ -2157,6 +1911,7 @@ def _include_domain_routers() -> None:
     from .routers.improvements import build_router as build_improvements_router
     from .routers.qwen import build_router as build_qwen_router
     from .routers.runs import build_router as build_runs_router
+    from .routers.visions import build_router as build_visions_router
     from .routers.work_items import build_router as build_work_items_router
 
     app.include_router(build_admin_health_router())
@@ -2166,6 +1921,7 @@ def _include_domain_routers() -> None:
     app.include_router(build_journal_router())
     app.include_router(build_orchestrator_router())
     app.include_router(build_improvements_router())
+    app.include_router(build_visions_router())
     app.include_router(build_chat_router())
     app.include_router(build_qwen_router())
 

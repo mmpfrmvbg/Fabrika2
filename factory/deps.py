@@ -38,6 +38,12 @@ _API_ENDPOINT_NAMES: tuple[str, ...] = (
     "visions",
     "create_vision",
     "decompose_vision_endpoint",
+    "queue_forge_inbox",
+    "fsm_work_item",
+    "agents_list_compat",
+    "failure_clusters",
+    "failures",
+    "hr_stub",
     "qwen_fix_endpoint",
     "list_work_items",
     "export_work_items",
@@ -90,6 +96,10 @@ def __getattr__(name: str) -> Callable[..., Any]:
         from .routers import analytics
 
         return getattr(analytics, name)
+    if name in {"visions", "create_vision", "decompose_vision_endpoint"}:
+        from .routers import visions
+
+        return getattr(visions, name)
     if name in _API_ENDPOINT_NAMES:
         return getattr(_api_server(), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

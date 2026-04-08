@@ -7,7 +7,8 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-from factory.api_server import create_vision, orchestrator_status, orchestrator_tick
+from factory.api_server import orchestrator_status, orchestrator_tick
+from factory.routers.visions import create_vision
 from factory.db import init_db
 from factory.orchestrator_core import wait_for_async_workers
 

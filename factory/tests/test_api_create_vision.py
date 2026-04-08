@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from factory.api_server import create_vision
+from factory.routers.visions import create_vision
 from factory.db import init_db
 from factory.models import EventType
 
