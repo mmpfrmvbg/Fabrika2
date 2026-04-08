@@ -2171,26 +2171,27 @@ async def chat_qwen_create(request: Request) -> dict[str, str]:
 
     # ChatService теперь принимает db_path и создаёт свои соединения
     service = ChatService(_db_path(), account_manager)
+    try:
+        full_context = context or {}
+        if work_item_id:
+            work_item = conn.execute(
+                "SELECT * FROM work_items WHERE id = ?",
+                (work_item_id,)
+            ).fetchone()
+            if work_item:
+                full_context.update({
+                    'work_item_id': work_item_id,
+                    'kind': work_item['kind'],
+                    'title': work_item['title'],
+                    'description': work_item['description'],
+                    'status': work_item['status']
+                })
 
-    full_context = context or {}
-    if work_item_id:
-        work_item = conn.execute(
-            "SELECT * FROM work_items WHERE id = ?",
-            (work_item_id,)
-        ).fetchone()
-        if work_item:
-            full_context.update({
-                'work_item_id': work_item_id,
-                'kind': work_item['kind'],
-                'title': work_item['title'],
-                'description': work_item['description'],
-                'status': work_item['status']
-            })
-
-    chat_id = service.create_chat_session(prompt, full_context)
-    conn.close()
-
-    return {"chat_id": chat_id}
+        chat_id = service.create_chat_session(prompt, full_context)
+        return {"chat_id": chat_id}
+    finally:
+        service.close()
+        conn.close()
 
 
 async def chat_qwen_stream(
@@ -2212,8 +2213,12 @@ async def chat_qwen_stream(
     service = ChatService(_db_path(), account_manager)
 
     async def generate():
-        async for chunk in service.stream_chat_response(chat_id):
-            yield chunk
+        try:
+            async for chunk in service.stream_chat_response(chat_id):
+                yield chunk
+        finally:
+            service.close()
+            conn.close()
 
     return StreamingResponse(
         generate(),

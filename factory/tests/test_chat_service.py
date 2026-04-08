@@ -53,3 +53,32 @@ def test_stream_error_not_leaked(service):
         chunks = asyncio.get_event_loop().run_until_complete(run())
     assert "secret" not in "".join(chunks)
     assert any("Internal server error" in c for c in chunks)
+
+
+def test_close_closes_connection_once(tmp_path):
+    account_manager = MagicMock()
+    fake_conn = MagicMock()
+    with patch("factory.chat_service.get_connection", return_value=fake_conn), patch(
+        "factory.chat_service.FactoryLogger", return_value=MagicMock()
+    ):
+        from factory.chat_service import ChatService
+
+        service = ChatService(db_path=str(tmp_path / "test.db"), account_manager=account_manager)
+        service.close()
+        service.close()
+
+    fake_conn.close.assert_called_once()
+
+
+def test_context_manager_closes_connection(tmp_path):
+    account_manager = MagicMock()
+    fake_conn = MagicMock()
+    with patch("factory.chat_service.get_connection", return_value=fake_conn), patch(
+        "factory.chat_service.FactoryLogger", return_value=MagicMock()
+    ):
+        from factory.chat_service import ChatService
+
+        with ChatService(db_path=str(tmp_path / "test.db"), account_manager=account_manager):
+            pass
+
+    fake_conn.close.assert_called_once()
