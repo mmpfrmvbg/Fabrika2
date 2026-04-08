@@ -258,6 +258,8 @@ def worker_iteration(factory: dict[str, Any], worker_id: str) -> bool:
                     payload={"sub": "worker_forge_failed_denied", "error": msg},
                 )
             release_queue_lease(conn, failed_wi_id)
+            if failed_wi_id != wi_id:
+                release_queue_lease(conn, wi_id)
             conn.commit()
         except Exception:
             conn.rollback()
