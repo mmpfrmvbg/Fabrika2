@@ -236,9 +236,14 @@ def test_worker_iteration_marks_failed_actual_batch_run_item(tmp_path: Path, mon
 
     assert worked is True
 
-    claimed_status = factory["conn"].execute(
-        "SELECT status FROM work_items WHERE id = 'atom_claimed'"
-    ).fetchone()["status"]
+    claimed_row = factory["conn"].execute(
+        """
+        SELECT wi.status, wiq.lease_owner
+        FROM work_items wi
+        LEFT JOIN work_item_queue wiq ON wiq.work_item_id = wi.id
+        WHERE wi.id = 'atom_claimed'
+        """
+    ).fetchone()
     failed_status = factory["conn"].execute(
         "SELECT status FROM work_items WHERE id = 'atom_real_fail'"
     ).fetchone()["status"]
@@ -246,6 +251,8 @@ def test_worker_iteration_marks_failed_actual_batch_run_item(tmp_path: Path, mon
         "SELECT lease_owner FROM work_item_queue WHERE work_item_id = 'atom_real_fail'"
     ).fetchone()["lease_owner"]
 
-    assert claimed_status == "in_progress"
+    assert claimed_row is not None
+    assert claimed_row["status"] == "in_progress"
+    assert claimed_row["lease_owner"] is None
     assert failed_status in {"ready_for_work", "dead"}
     assert failed_lease_owner is None
