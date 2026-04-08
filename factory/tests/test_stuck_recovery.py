@@ -146,18 +146,16 @@ class StuckRecoveryTests(unittest.TestCase):
         self.assertEqual(recovered, 1)
 
         qrow = self.conn.execute(
-            "SELECT 1 FROM work_item_queue WHERE work_item_id = 'wi_crash'"
+            """
+            SELECT lease_owner, lease_until
+            FROM work_item_queue
+            WHERE work_item_id = 'wi_crash'
+            """
         ).fetchone()
-        self.assertIsNone(qrow)
+        self.assertIsNotNone(qrow)
+        self.assertIsNone(qrow["lease_owner"])
+        self.assertIsNone(qrow["lease_until"])
 
-        self.conn.execute(
-            """
-            INSERT INTO work_item_queue (
-                work_item_id, queue_name, attempts, max_attempts
-            )
-            VALUES ('wi_crash', 'forge_inbox', 0, 3)
-            """
-        )
         claimed = claim_forge_inbox_atom(self.conn, "worker-recover")
         self.assertEqual(claimed, "wi_crash")
 
