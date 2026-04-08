@@ -24,10 +24,6 @@ _API_ENDPOINT_NAMES: tuple[str, ...] = (
     "chat_qwen_stream",
     "list_events",
     "stream_events",
-    "journal",
-    "judgements",
-    "judge_verdicts",
-    "tree",
     "api_analytics",
     "stats",
     "api_workers_status",
@@ -78,6 +74,10 @@ def __getattr__(name: str) -> Callable[..., Any]:
         from .routers import improvements
 
         return getattr(improvements, name)
+    if name in {"journal", "judgements", "judge_verdicts", "tree"}:
+        from .routers import journal
+
+        return getattr(journal, name)
     if name in _API_ENDPOINT_NAMES:
         return getattr(_api_server(), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

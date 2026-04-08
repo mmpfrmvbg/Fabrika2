@@ -7,11 +7,6 @@ def build_router() -> APIRouter:
     from factory import deps as srv
 
     router = APIRouter(tags=["orchestrator"])
-    router.add_api_route("/api/journal", srv.journal, methods=["GET"])
-    router.add_api_route("/api/judgements", srv.judgements, methods=["GET"])
-    router.add_api_route("/api/verdicts", srv.judge_verdicts, methods=["GET"])
-    router.add_api_route("/api/judge_verdicts", srv.judge_verdicts, methods=["GET"])
-    router.add_api_route("/api/tree", srv.tree, methods=["GET"])
     router.add_api_route("/api/analytics", srv.api_analytics, methods=["GET"])
     router.add_api_route("/api/stats", srv.stats, methods=["GET"])
     router.add_api_route("/api/workers/status", srv.api_workers_status, methods=["GET"])
