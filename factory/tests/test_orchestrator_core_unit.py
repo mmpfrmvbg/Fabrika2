@@ -252,3 +252,58 @@ def test_start_idle_loop_calls_tick_and_sleeps(monkeypatch, tmp_path: Path) -> N
         assert sleeps[0] > 0
     finally:
         conn.close()
+
+
+def test_dispatch_planner_promotes_draft_atoms_to_ready_for_work(monkeypatch, tmp_path: Path) -> None:
+    f = wire(tmp_path / "orch_planner_promote_atoms.db")
+    conn = f["conn"]
+    orch = f["orchestrator"]
+    try:
+        now = "2026-03-30T12:00:00.000000Z"
+        conn.execute(
+            """
+            INSERT INTO work_items (
+                id, parent_id, root_id, kind, title, description, status,
+                creator_role, owner_role, planning_depth, priority,
+                created_at, updated_at
+            )
+            VALUES (?, NULL, ?, 'vision', 'Vision', '', 'in_progress', 'creator', 'planner', 0, 1, ?, ?)
+            """,
+            ("wi_root", "wi_root", now, now),
+        )
+        conn.execute(
+            """
+            INSERT INTO work_items (
+                id, parent_id, root_id, kind, title, description, status,
+                creator_role, owner_role, planning_depth, priority,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, 'task', 'Task', '', 'planned', 'planner', 'planner', 1, 1, ?, ?)
+            """,
+            ("wi_task", "wi_root", "wi_root", now, now),
+        )
+        conn.execute(
+            """
+            INSERT INTO work_items (
+                id, parent_id, root_id, kind, title, description, status,
+                creator_role, owner_role, planning_depth, priority,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, 'atom', 'Atom', '', 'draft', 'planner', 'planner', 2, 1, ?, ?)
+            """,
+            ("wi_atom", "wi_task", "wi_root", now, now),
+        )
+        conn.commit()
+
+        monkeypatch.setattr("factory.orchestrator_core.planner.run_planner", lambda _orch, _item: None)
+
+        orch._dispatch_planner({"work_item_id": "wi_root"})
+
+        atom = conn.execute(
+            "SELECT status, owner_role FROM work_items WHERE id = ?",
+            ("wi_atom",),
+        ).fetchone()
+        assert atom["status"] == "ready_for_work"
+        assert atom["owner_role"] == "forge"
+    finally:
+        conn.close()
