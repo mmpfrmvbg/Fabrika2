@@ -258,6 +258,7 @@ def test_worker_iteration_marks_failed_actual_batch_run_item(tmp_path: Path, mon
     assert failed_lease_owner is None
 
 
+
 def test_claim_forge_inbox_reclaims_expired_lease(tmp_path: Path) -> None:
     conn = init_db(tmp_path / "expired_lease_claim.db")
     now = "2026-04-01T00:00:00.000000Z"
@@ -324,6 +325,8 @@ def test_worker_iteration_orphan_path_starts_heartbeat(tmp_path: Path, monkeypat
             class _Row:
                 def fetchone(self_inner):
                     return {"work_item_id": "wi_orphan"}
+                def fetchall(self_inner):
+                    return [{"work_item_id": "wi_orphan"}]
 
             return _Row()
 
@@ -358,6 +361,59 @@ def test_worker_iteration_orphan_path_starts_heartbeat(tmp_path: Path, monkeypat
     worked = worker_iteration(factory, "worker-orphan")
 
     assert worked is True
-    assert touched == ["wi_orphan"]
-    assert hb_loops == ["wi_orphan"]
+    assert touched == []
+    assert hb_loops == []
     assert downstream == ["wi_orphan"]
+
+def test_worker_iteration_orphan_path_drains_batch_of_five(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "worker_orphan_batch.db"
+    conn = init_db(db_path)
+    conn.execute("INSERT INTO agents (id, role, active) VALUES ('forge', 'forge', 1)")
+    orphan_ids = [f"atom_orphan_{idx}" for idx in range(6)]
+    now_prefix = "2026-04-01T00:00:0"
+
+    for idx, wi_id in enumerate(orphan_ids):
+        ts = f"{now_prefix}{idx}.000000Z"
+        conn.execute(
+            """
+            INSERT INTO work_items (
+                id, parent_id, root_id, kind, title, description, status,
+                creator_role, owner_role, planning_depth, priority, created_at, updated_at
+            ) VALUES (?, NULL, ?, 'atom', ?, '', 'in_progress',
+                      'creator', 'forge', 0, 1, ?, ?)
+            """,
+            (wi_id, wi_id, wi_id, ts, ts),
+        )
+        conn.execute(
+            """
+            INSERT INTO runs (id, work_item_id, agent_id, role, run_type, status, started_at)
+            VALUES (?, ?, 'forge', 'forge', 'implement', 'queued', ?)
+            """,
+            (f"run_{idx}", wi_id, ts),
+        )
+    conn.commit()
+
+    forge_calls = {"n": 0}
+    drained_ids: list[str] = []
+
+    def fake_run_forge(_orch):
+        forge_calls["n"] += 1
+
+    def fake_drain(_orch, wi_id):
+        drained_ids.append(wi_id)
+
+    monkeypatch.setattr(worker_module.forge, "run_forge_queued_runs", fake_run_forge)
+    monkeypatch.setattr(worker_module, "drain_atom_downstream", fake_drain)
+
+    factory = {
+        "orchestrator": object(),
+        "conn": conn,
+        "logger": object(),
+        "db_path": str(db_path),
+    }
+    worked = worker_iteration(factory, "worker-orphan")
+
+    assert worked is True
+    assert forge_calls["n"] == 1
+    assert drained_ids == orphan_ids[:5]
+
