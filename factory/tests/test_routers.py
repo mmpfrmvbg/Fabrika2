@@ -84,6 +84,7 @@ def test_router_endpoints_are_reachable_with_api_key(
     [
         "admin_health.py",
         "chat.py",
+        "improvements.py",
         "orchestrator.py",
         "qwen.py",
         "work_items.py",
