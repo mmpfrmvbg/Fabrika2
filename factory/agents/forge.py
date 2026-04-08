@@ -12,6 +12,16 @@ if TYPE_CHECKING:
     from ..orchestrator_core import Orchestrator
 
 
+class ForgeBatchRunError(RuntimeError):
+    """Ошибка падения конкретного прогона в batch-обработке forge."""
+
+    def __init__(self, work_item_id: str, run_id: str, cause: Exception):
+        self.work_item_id = work_item_id
+        self.run_id = run_id
+        self.cause = cause
+        super().__init__(f"forge run failed for work_item_id={work_item_id}, run_id={run_id}: {cause}")
+
+
 def run_forge_queued_runs(orchestrator: Orchestrator) -> None:
     """
     Берёт прогоны forge со статусом ``queued``, исполняет через ``execute_forge_run``,
@@ -55,4 +65,7 @@ def run_forge_queued_runs(orchestrator: Orchestrator) -> None:
             (run_id,),
         )
 
-        execute_forge_run(conn, run_id, wi_id, accounts, logger, sm)
+        try:
+            execute_forge_run(conn, run_id, wi_id, accounts, logger, sm)
+        except Exception as e:
+            raise ForgeBatchRunError(wi_id, run_id, e) from e
