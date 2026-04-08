@@ -81,8 +81,11 @@ def api_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 
     monkeypatch.setenv("FACTORY_DB", str(db_path))
     monkeypatch.setenv("FACTORY_QWEN_DRY_RUN", "1")
+    monkeypatch.setenv("FACTORY_API_KEY", "test-api-key")
     api_server._RATE_LIMIT_STATE.clear()
-    return TestClient(app, raise_server_exceptions=False)
+    client = TestClient(app, raise_server_exceptions=False)
+    client.headers.update({"X-API-Key": "test-api-key"})
+    return client
 
 
 def test_get_work_items_returns_items_array(api_client: TestClient) -> None:
@@ -202,6 +205,39 @@ def test_patch_work_item_valid_data_returns_200(api_client: TestClient) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["work_item"]["title"] == "Updated Integration Vision"
+
+
+@pytest.mark.parametrize(
+    ("patch_payload", "assert_field", "assert_value"),
+    [
+        ({"title": "Only Title Updated"}, "title", "Only Title Updated"),
+        ({"description": "Only Description Updated"}, "description", "Only Description Updated"),
+        (
+            {"title": "Both Updated", "description": "Both Description Updated"},
+            "title",
+            "Both Updated",
+        ),
+    ],
+)
+def test_patch_work_item_updates_updated_at_for_all_update_variants(
+    api_client: TestClient,
+    patch_payload: dict[str, str],
+    assert_field: str,
+    assert_value: str,
+) -> None:
+    before = api_client.get("/api/work-items/wi_integration_1")
+    assert before.status_code == 200
+    before_updated_at = before.json()["work_item"]["updated_at"]
+
+    response = api_client.patch(
+        "/api/work-items/wi_integration_1",
+        json=patch_payload,
+    )
+    assert response.status_code == 200
+    payload = response.json()["work_item"]
+    assert payload[assert_field] == assert_value
+    assert payload["updated_at"] != before_updated_at
+    assert "T" in payload["updated_at"]
 
 
 def test_patch_work_item_invalid_status_value_returns_400_or_422(api_client: TestClient) -> None:
