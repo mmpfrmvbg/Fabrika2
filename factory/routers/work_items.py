@@ -4,7 +4,7 @@ from fastapi import APIRouter
 
 
 def build_router() -> APIRouter:
-    from factory import api_server as srv
+    from factory import deps as srv
 
     router = APIRouter(tags=["work-items"])
     router.add_api_route("/api/work-items", srv.list_work_items, methods=["GET"])
