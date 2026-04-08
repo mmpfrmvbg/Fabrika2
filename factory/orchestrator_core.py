@@ -335,6 +335,33 @@ class Orchestrator:
 
     def _dispatch_planner(self, item: dict):
         planner.run_planner(self, item)
+        self._promote_planner_draft_atoms(item["work_item_id"])
+
+    def _promote_planner_draft_atoms(self, root_work_item_id: str) -> None:
+        """
+        Переводит атомы, созданные планировщиком в ``draft``, в ``ready_for_work``
+        в пределах поддерева ``root_work_item_id``.
+        """
+        self.conn.execute(
+            """
+            WITH RECURSIVE subtree(id) AS (
+                SELECT id
+                FROM work_items
+                WHERE id = ?
+                UNION ALL
+                SELECT wi.id
+                FROM work_items wi
+                JOIN subtree s ON wi.parent_id = s.id
+            )
+            UPDATE work_items
+            SET status = 'ready_for_work',
+                owner_role = ?
+            WHERE id IN (SELECT id FROM subtree)
+              AND kind IN ('atom', 'atm_change')
+              AND status = 'draft'
+            """,
+            (root_work_item_id, Role.FORGE.value),
+        )
 
     def process_forge_queue(self) -> None:
         """
