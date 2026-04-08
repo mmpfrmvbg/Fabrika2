@@ -131,11 +131,15 @@ class ChatService:
         env['TERM'] = 'dumb'       # убрать цветовое форматирование
         
         try:
+            # Передаём prompt через stdin: это безопаснее для пользовательского текста
+            # (в т.ч. переносы строк/спецсимволы) и совместимо с конфигом раннера
+            # (см. factory.qwen_cli_runner: `qwen -p -` + stdin).
             result = subprocess.run(
-                [qwen_cmd, full_prompt, '--channel', 'CI', '--yolo'],
+                [qwen_cmd, '-p', '-', '--channel', 'CI', '--yolo'],
                 capture_output=True,
                 text=True,
                 encoding='utf-8',
+                input=full_prompt,
                 timeout=120,
                 env=env
             )
