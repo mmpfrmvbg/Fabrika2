@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 
-from factory.api_server import list_events, visions
+from factory.api_server import list_events
+from factory.routers.visions import visions
 from factory.db import init_db
 
 
