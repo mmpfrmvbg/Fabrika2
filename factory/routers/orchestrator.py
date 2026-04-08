@@ -1,0 +1,32 @@
+from __future__ import annotations
+
+from fastapi import APIRouter
+
+
+def build_router() -> APIRouter:
+    from factory import api_server as srv
+
+    router = APIRouter(tags=["orchestrator"])
+    router.add_api_route("/api/events", srv.stream_events, methods=["GET"])
+    router.add_api_route("/api/journal", srv.journal, methods=["GET"])
+    router.add_api_route("/api/judgements", srv.judgements, methods=["GET"])
+    router.add_api_route("/api/verdicts", srv.judge_verdicts, methods=["GET"])
+    router.add_api_route("/api/judge_verdicts", srv.judge_verdicts, methods=["GET"])
+    router.add_api_route("/api/tree", srv.tree, methods=["GET"])
+    router.add_api_route("/api/analytics", srv.api_analytics, methods=["GET"])
+    router.add_api_route("/api/stats", srv.stats, methods=["GET"])
+    router.add_api_route("/api/workers/status", srv.api_workers_status, methods=["GET"])
+    router.add_api_route("/api/improvements", srv.list_improvements, methods=["GET"])
+    router.add_api_route("/api/improvements/{ic_id}/approve", srv.approve_improvement, methods=["POST"])
+    router.add_api_route("/api/improvements/{ic_id}/reject", srv.reject_improvement, methods=["POST"])
+    router.add_api_route("/api/improvements/{ic_id}/convert", srv.convert_improvement, methods=["POST"])
+    router.add_api_route("/api/queue/forge_inbox", srv.queue_forge_inbox, methods=["GET"])
+    router.add_api_route("/api/fsm/work_item", srv.fsm_work_item, methods=["GET"])
+    router.add_api_route("/api/agents", srv.agents_list_compat, methods=["GET"])
+    router.add_api_route("/api/failure-clusters", srv.failure_clusters, methods=["GET"])
+    router.add_api_route("/api/failures", srv.failures, methods=["GET"])
+    router.add_api_route("/api/hr", srv.hr_stub, methods=["GET"])
+    router.add_api_route("/api/visions", srv.visions, methods=["GET"])
+    router.add_api_route("/api/visions", srv.create_vision, methods=["POST"])
+    router.add_api_route("/api/visions/{vision_id}/decompose", srv.decompose_vision_endpoint, methods=["POST"])
+    return router
