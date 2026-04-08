@@ -1433,7 +1433,6 @@ def list_events(
         conn.close()
 
 
-@app.get("/api/events")
 async def stream_events(
     request: Request,
     last_event_id: int = Query(default=0, ge=0),
@@ -1492,7 +1491,6 @@ async def stream_events(
     )
 
 
-@app.get("/api/journal")
 def journal(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -1609,7 +1607,6 @@ def _load_judgements_items(
     return items[:limit]
 
 
-@app.get("/api/judgements")
 def judgements(
     work_item_id: str | None = None,
     limit: int = Query(100, ge=1, le=500),
@@ -1621,8 +1618,6 @@ def judgements(
         conn.close()
 
 
-@app.get("/api/verdicts")
-@app.get("/api/judge_verdicts")
 def judge_verdicts(
     work_item_id: str | None = None,
     limit: int = Query(100, ge=1, le=500),
@@ -1635,7 +1630,6 @@ def judge_verdicts(
         conn.close()
 
 
-@app.get("/api/tree")
 def tree() -> dict[str, Any]:
     conn = _open_ro()
     try:
@@ -1645,7 +1639,6 @@ def tree() -> dict[str, Any]:
         conn.close()
 
 
-@app.get("/api/analytics")
 def api_analytics(
     period: str = Query("24h", description="24h | 7d | 30d | all"),
 ) -> dict[str, Any]:
@@ -1663,7 +1656,6 @@ def api_analytics(
         conn.close()
 
 
-@app.get("/api/stats")
 def stats() -> dict[str, Any]:
     conn = _open_ro()
     try:
@@ -1725,7 +1717,6 @@ def stats() -> dict[str, Any]:
         conn.close()
 
 
-@app.get("/api/workers/status")
 def api_workers_status() -> dict[str, Any]:
     """Активные lease в очередях (внешние worker-процессы и оркестратор)."""
     conn = _open_ro()
@@ -1735,7 +1726,6 @@ def api_workers_status() -> dict[str, Any]:
         conn.close()
 
 
-@app.get("/api/improvements")
 def list_improvements() -> dict[str, Any]:
     conn = _open_ro()
     try:
@@ -1789,7 +1779,6 @@ def list_improvements() -> dict[str, Any]:
         conn.close()
 
 
-@app.post("/api/improvements/{ic_id}/approve")
 def approve_improvement(
     ic_id: str = FastPath(..., min_length=1, max_length=128),
     body: ImprovementReviewRequest = Body(default=ImprovementReviewRequest()),
@@ -1820,7 +1809,6 @@ def approve_improvement(
         conn.close()
 
 
-@app.post("/api/improvements/{ic_id}/reject")
 def reject_improvement(
     ic_id: str = FastPath(..., min_length=1, max_length=128),
     _: None = Depends(require_api_key),
@@ -1844,7 +1832,6 @@ def reject_improvement(
         conn.close()
 
 
-@app.post("/api/improvements/{ic_id}/convert")
 def convert_improvement(
     ic_id: str = FastPath(..., min_length=1, max_length=128),
     _: None = Depends(require_api_key),
@@ -1865,7 +1852,6 @@ def convert_improvement(
         conn.close()
 
 
-@app.get("/api/queue/forge_inbox")
 def queue_forge_inbox() -> dict[str, Any]:
     """Совместимость с factory-os.html (тот же контракт, что legacy ``dashboard_api``)."""
     conn = _open_ro()
@@ -1875,7 +1861,6 @@ def queue_forge_inbox() -> dict[str, Any]:
         conn.close()
 
 
-@app.get("/api/fsm/work_item")
 def fsm_work_item() -> dict[str, Any]:
     conn = _open_ro()
     try:
@@ -1884,7 +1869,6 @@ def fsm_work_item() -> dict[str, Any]:
         conn.close()
 
 
-@app.get("/api/agents")
 def agents_list_compat() -> dict[str, Any]:
     conn = _open_ro()
     try:
@@ -1893,23 +1877,19 @@ def agents_list_compat() -> dict[str, Any]:
         conn.close()
 
 
-@app.get("/api/failure-clusters")
 def failure_clusters() -> dict[str, Any]:
     return {"clusters": [], "items": []}
 
 
-@app.get("/api/failures")
 def failures() -> dict[str, Any]:
     """Alias for /api/failure-clusters for frontend compatibility."""
     return {"clusters": [], "items": []}
 
 
-@app.get("/api/hr")
 def hr_stub() -> dict[str, Any]:
     return {"policies": [], "proposals": []}
 
 
-@app.get("/api/visions")
 def visions() -> dict[str, Any]:
     conn = _open_ro()
     try:
@@ -1968,7 +1948,6 @@ def visions() -> dict[str, Any]:
         conn.close()
 
 
-@app.post("/api/visions")
 def create_vision(
     body: VisionRequest | dict[str, Any] = Body(...),
     _: None = Depends(require_api_key),
@@ -2324,11 +2303,13 @@ def qwen_fix_endpoint(
 def _include_domain_routers() -> None:
     from .routers.admin_health import build_router as build_admin_health_router
     from .routers.chat import build_router as build_chat_router
+    from .routers.orchestrator import build_router as build_orchestrator_router
     from .routers.qwen import build_router as build_qwen_router
     from .routers.work_items import build_router as build_work_items_router
 
     app.include_router(build_admin_health_router())
     app.include_router(build_work_items_router())
+    app.include_router(build_orchestrator_router())
     app.include_router(build_chat_router())
     app.include_router(build_qwen_router())
 
