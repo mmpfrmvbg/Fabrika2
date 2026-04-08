@@ -6,7 +6,7 @@ from pathlib import Path
 from factory.db import init_db
 from factory.models import EventType
 from factory.queue_ops import claim_forge_inbox_atom
-from factory.worker import run_worker_loop
+from factory.worker import run_worker_loop, worker_iteration
 import factory.worker as worker_module
 
 
@@ -127,3 +127,52 @@ def test_sigterm_during_processing_finishes_item_and_stops_cleanly(tmp_path: Pat
     assert lease_owner is None
     assert any("Worker shutting down gracefully, finishing current item..." in m for m in logger.messages)
     assert any("Worker stopped cleanly" in m for m in logger.messages)
+
+
+def test_worker_iteration_marks_forge_failed_when_forge_crashes(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "worker_forge_crash.db"
+    conn = init_db(db_path)
+    now = "2026-04-01T00:00:00.000000Z"
+    conn.execute(
+        """
+        INSERT INTO work_items (
+            id, parent_id, root_id, kind, title, description, status,
+            creator_role, owner_role, planning_depth, priority, created_at, updated_at
+        ) VALUES ('atom_fail', NULL, 'atom_fail', 'atom', 'Failing atom', '', 'ready_for_work',
+                  'creator', 'forge', 0, 1, ?, ?)
+        """,
+        (now, now),
+    )
+    conn.execute(
+        """
+        INSERT INTO work_item_queue (work_item_id, queue_name, priority, available_at)
+        VALUES ('atom_fail', 'forge_inbox', 100, ?)
+        """,
+        (now,),
+    )
+    conn.commit()
+    conn.close()
+
+    factory = worker_module.wire(db_path)
+
+    def fake_forge_crash(_orch):
+        raise RuntimeError("boom in forge worker")
+
+    monkeypatch.setattr(worker_module.forge, "run_forge_queued_runs", fake_forge_crash)
+
+    worked = worker_iteration(factory, "worker-crash")
+
+    assert worked is True
+    row = factory["conn"].execute(
+        """
+        SELECT wi.status, wiq.lease_owner, wiq.attempts
+        FROM work_items wi
+        LEFT JOIN work_item_queue wiq ON wiq.work_item_id = wi.id
+        WHERE wi.id = 'atom_fail'
+        """
+    ).fetchone()
+    assert row is not None
+    assert row["status"] in {"ready_for_work", "dead"}
+    assert row["status"] != "in_progress"
+    assert row["lease_owner"] is None
+    assert int(row["attempts"] or 0) >= 1
