@@ -33,7 +33,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Union
 from fastapi import Body, Depends, FastAPI, HTTPException, Path as FastPath, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 
 from .config import (
     API_HOST,
@@ -67,6 +67,16 @@ from .contracts.planner import PlannerInput
 from .qwen_cli_runner import run_qwen_cli
 from .chat_service import ChatService
 from .logging_config import configure_logging
+from .schemas import (
+    BulkArchiveRequest,
+    ChatCreateRequest,
+    ImprovementReviewRequest,
+    QwenFixRequest,
+    RunCreateRequest,
+    VisionRequest,
+    WorkItemCreateRequest,
+    WorkItemPatchRequest,
+)
 
 load_dotenv()
 
@@ -79,52 +89,6 @@ _RATE_LIMITS_PER_MINUTE = {"GET": 300, "POST": 60}
 _RATE_LIMIT_LOCK = threading.Lock()
 _RATE_LIMIT_STATE: dict[tuple[str, str], dict[str, float | int]] = defaultdict(dict)
 _RATE_LIMIT_TTL_SECONDS = 600
-
-
-class WorkItemPatchRequest(BaseModel):
-    title: str | None = Field(default=None, min_length=1, max_length=500)
-    description: str | None = Field(default=None, max_length=10000)
-
-
-class BulkArchiveRequest(BaseModel):
-    ids: list[str] | None = None
-    filter: str | None = None
-
-
-class ImprovementReviewRequest(BaseModel):
-    reviewed_by: str | None = Field(default="dashboard", min_length=1, max_length=128)
-
-
-class VisionRequest(BaseModel):
-    title: str = Field(..., min_length=1, max_length=500)
-    description: str | None = Field(default=None, max_length=10000)
-
-
-class WorkItemCreateRequest(BaseModel):
-    title: str = Field(..., min_length=1, max_length=500)
-    description: str | None = Field(default=None, max_length=10000)
-    kind: str = Field(default="vision", min_length=1, max_length=32)
-    parent_id: str | None = Field(default=None, min_length=1, max_length=128)
-    priority: int = Field(default=0, ge=-100000, le=100000)
-    idempotency_key: str | None = Field(default=None, min_length=1, max_length=256)
-    deadline_at: datetime | None = Field(default=None)
-
-
-class ChatCreateRequest(BaseModel):
-    prompt: str = Field(..., min_length=1, max_length=20000)
-    context: dict[str, Any] = Field(default_factory=dict)
-    work_item_id: str | None = Field(default=None, min_length=1, max_length=128)
-
-
-class QwenFixRequest(BaseModel):
-    type: str | None = Field(default="unknown", max_length=128)
-    message: str = Field(..., min_length=1, max_length=10000)
-    context: dict[str, Any] = Field(default_factory=dict)
-
-
-class RunCreateRequest(BaseModel):
-    work_item_id: str = Field(..., min_length=1, max_length=128)
-    correlation_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 def _valid_id(value: str, field: str) -> str:
@@ -174,6 +138,7 @@ async def require_api_key(request: Request) -> None:
     got = (request.headers.get("X-API-Key") or "").strip()
     if got != expected:
         raise HTTPException(status_code=401, detail="Unauthorized")
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
