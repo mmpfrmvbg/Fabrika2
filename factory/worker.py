@@ -234,6 +234,21 @@ def worker_iteration(factory: dict[str, Any], worker_id: str) -> bool:
             payload={"sub": "worker_iteration_error", "error": str(e)},
         )
         try:
+            ok, msg = orch.sm.apply_transition(
+                wi_id,
+                "forge_failed",
+                actor_role=Role.ORCHESTRATOR.value,
+            )
+            if not ok:
+                logger.log(
+                    EventType.FORGE_FAILED,
+                    "work_item",
+                    wi_id,
+                    f"worker: forge_failed transition denied: {msg}",
+                    severity=Severity.ERROR,
+                    work_item_id=wi_id,
+                    payload={"sub": "worker_forge_failed_denied", "error": msg},
+                )
             release_queue_lease(conn, wi_id)
             conn.commit()
         except Exception:
