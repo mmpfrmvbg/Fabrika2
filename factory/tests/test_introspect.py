@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from fastapi import HTTPException
 from factory.api_server import app
 from factory.db import ensure_improvement_candidates_schema, gen_id, init_db
 from factory.factory_introspect import FactoryIntrospector
@@ -298,6 +299,42 @@ class TestIntrospect(unittest.TestCase):
             conn.close()
             r3 = client.post("/api/improvements/ic_ar2/reject", json={})
             self.assertEqual(r3.status_code, 200)
+        finally:
+            api_mod._db_path = prev  # type: ignore[assignment]
+
+    def test_convert_improvement_hides_value_error_detail(self) -> None:
+        db = _mk_db()
+        init_db(db)
+        import factory.api_server as api_mod
+
+        prev = api_mod._db_path  # type: ignore[attr-defined]
+
+        def _p() -> Path:
+            return db
+
+        api_mod._db_path = _p  # type: ignore[assignment]
+        try:
+            conn = sqlite3.connect(str(db))
+            ensure_improvement_candidates_schema(conn)
+            conn.execute(
+                """
+                INSERT INTO improvement_candidates (
+                    id, source_type, source_ref, title, description, evidence,
+                    fix_target, frequency, severity_score, impact_score, confidence,
+                    status, risk_level
+                )
+                VALUES ('ic_bad_convert', 'manual', NULL, 'X', 'Y', '{}', 'code', 1, 0.5, 0.5, 0.5,
+                        'proposed', 'low')
+                """
+            )
+            conn.commit()
+            conn.close()
+
+            with self.assertRaises(HTTPException) as ctx:
+                api_mod.convert_improvement("ic_bad_convert")
+
+            self.assertEqual(ctx.exception.status_code, 400)
+            self.assertEqual(ctx.exception.detail, "Invalid input for vision conversion")
         finally:
             api_mod._db_path = prev  # type: ignore[assignment]
 
