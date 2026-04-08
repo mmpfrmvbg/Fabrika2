@@ -43,6 +43,20 @@ class ChatService:
         # Основное соединение для основного потока
         self.conn = get_connection(db_path)
         self.logger = FactoryLogger(self.conn)
+        self._closed = False
+
+    def close(self) -> None:
+        """Закрыть SQLite соединение сервиса (идемпотентно)."""
+        if self._closed:
+            return
+        self.conn.close()
+        self._closed = True
+
+    def __enter__(self) -> "ChatService":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
 
     def create_chat_session(self, prompt: str, context: dict) -> str:
         _cleanup_expired_chats()
@@ -83,6 +97,7 @@ class ChatService:
                     yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
                 except asyncio.TimeoutError:
                     if task.done():
+                        await task
                         break
                     # Keepalive для поддержания соединения
                     yield ": keepalive\n\n"
