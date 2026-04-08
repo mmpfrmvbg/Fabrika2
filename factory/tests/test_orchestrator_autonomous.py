@@ -82,3 +82,31 @@ def test_create_vision_then_5_ticks_atoms_done(monkeypatch) -> None:
             path.unlink(missing_ok=True)
         except OSError:
             pass
+
+
+def test_orchestrator_tick_updates_items_processed_total(monkeypatch) -> None:
+    from factory import api_server
+
+    path = Path(tempfile.mkstemp(prefix="factory_orch_tick_counter_", suffix=".db")[1])
+    original_total = api_server._orch_thread.items_processed_total
+    try:
+        monkeypatch.setenv("FACTORY_DB_PATH", str(path))
+        init_db(path).close()
+        api_server._orch_thread.items_processed_total = 10
+        monkeypatch.setattr(
+            api_server._orch_thread,
+            "tick_once",
+            lambda: {"forge": 2, "review": 3, "judge": 1},
+        )
+
+        out = orchestrator_tick()
+
+        assert out["processed"] == {"forge": 2, "review": 3, "judge": 1}
+        assert out["status"]["items_processed"] == 16
+        assert api_server._orch_thread.items_processed_total == 16
+    finally:
+        api_server._orch_thread.items_processed_total = original_total
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
