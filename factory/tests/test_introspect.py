@@ -4,6 +4,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+import os
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -224,6 +225,7 @@ class TestIntrospect(unittest.TestCase):
 
         api_mod._db_path = _p  # type: ignore[assignment]
         try:
+            os.environ["FACTORY_API_KEY"] = "test-key"
             client = TestClient(app)
             conn = sqlite3.connect(str(db))
             ensure_improvement_candidates_schema(conn)
@@ -240,7 +242,7 @@ class TestIntrospect(unittest.TestCase):
             )
             conn.commit()
             conn.close()
-            r = client.get("/api/improvements")
+            r = client.get("/api/improvements", headers={"X-API-Key": "test-key"})
             self.assertEqual(r.status_code, 200)
             data = r.json()
             self.assertIn("candidates", data)
@@ -261,6 +263,7 @@ class TestIntrospect(unittest.TestCase):
 
         api_mod._db_path = _p  # type: ignore[assignment]
         try:
+            os.environ["FACTORY_API_KEY"] = "test-key"
             client = TestClient(app)
             conn = sqlite3.connect(str(db))
             ensure_improvement_candidates_schema(conn)
@@ -277,10 +280,18 @@ class TestIntrospect(unittest.TestCase):
             )
             conn.commit()
             conn.close()
-            r1 = client.post("/api/improvements/ic_ar1/approve", json={"reviewed_by": "tester"})
+            r1 = client.post(
+                "/api/improvements/ic_ar1/approve",
+                json={"reviewed_by": "tester"},
+                headers={"X-API-Key": "test-key"},
+            )
             self.assertEqual(r1.status_code, 200)
             self.assertTrue(r1.json().get("ok"))
-            r2 = client.post("/api/improvements/ic_ar1/reject", json={})
+            r2 = client.post(
+                "/api/improvements/ic_ar1/reject",
+                json={},
+                headers={"X-API-Key": "test-key"},
+            )
             # already approved — reject should 400
             self.assertEqual(r2.status_code, 400)
             conn = sqlite3.connect(str(db))
@@ -297,7 +308,11 @@ class TestIntrospect(unittest.TestCase):
             )
             conn.commit()
             conn.close()
-            r3 = client.post("/api/improvements/ic_ar2/reject", json={})
+            r3 = client.post(
+                "/api/improvements/ic_ar2/reject",
+                json={},
+                headers={"X-API-Key": "test-key"},
+            )
             self.assertEqual(r3.status_code, 200)
         finally:
             api_mod._db_path = prev  # type: ignore[assignment]
@@ -330,8 +345,10 @@ class TestIntrospect(unittest.TestCase):
             conn.commit()
             conn.close()
 
+            from factory.routers import improvements as improvements_router
+
             with self.assertRaises(HTTPException) as ctx:
-                api_mod.convert_improvement("ic_bad_convert")
+                improvements_router.convert_improvement("ic_bad_convert")
 
             self.assertEqual(ctx.exception.status_code, 400)
             self.assertEqual(ctx.exception.detail, "Invalid input for vision conversion")
