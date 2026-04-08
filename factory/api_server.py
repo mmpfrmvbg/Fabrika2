@@ -1845,7 +1845,8 @@ def convert_improvement(
         try:
             vid = intro.convert_one(conn, ic_id, logger)
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
+            logger._py_logger.warning("convert_improvement failed for %s: %s", ic_id, e)
+            raise HTTPException(status_code=400, detail="Invalid input for vision conversion") from e
         conn.commit()
         return {"ok": True, "vision_id": vid}
     finally:
