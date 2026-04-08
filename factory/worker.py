@@ -224,18 +224,26 @@ def worker_iteration(factory: dict[str, Any], worker_id: str) -> bool:
         conn.commit()
         return True
     except Exception as e:  # noqa: BLE001
+        failed_wi_id = wi_id
+        if isinstance(e, forge.ForgeBatchRunError):
+            failed_wi_id = e.work_item_id
         logger.log(
             EventType.TASK_STATUS_CHANGED,
             "work_item",
-            wi_id,
+            failed_wi_id,
             f"worker iteration error: {e}",
             severity=Severity.ERROR,
-            work_item_id=wi_id,
-            payload={"sub": "worker_iteration_error", "error": str(e)},
+            work_item_id=failed_wi_id,
+            payload={
+                "sub": "worker_iteration_error",
+                "error": str(e),
+                "claimed_work_item_id": wi_id,
+                "failed_work_item_id": failed_wi_id,
+            },
         )
         try:
             ok, msg = orch.sm.apply_transition(
-                wi_id,
+                failed_wi_id,
                 "forge_failed",
                 actor_role=Role.ORCHESTRATOR.value,
             )
@@ -243,13 +251,13 @@ def worker_iteration(factory: dict[str, Any], worker_id: str) -> bool:
                 logger.log(
                     EventType.FORGE_FAILED,
                     "work_item",
-                    wi_id,
+                    failed_wi_id,
                     f"worker: forge_failed transition denied: {msg}",
                     severity=Severity.ERROR,
-                    work_item_id=wi_id,
+                    work_item_id=failed_wi_id,
                     payload={"sub": "worker_forge_failed_denied", "error": msg},
                 )
-            release_queue_lease(conn, wi_id)
+            release_queue_lease(conn, failed_wi_id)
             conn.commit()
         except Exception:
             conn.rollback()

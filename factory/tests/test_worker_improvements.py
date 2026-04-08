@@ -176,3 +176,76 @@ def test_worker_iteration_marks_forge_failed_when_forge_crashes(tmp_path: Path, 
     assert row["status"] != "in_progress"
     assert row["lease_owner"] is None
     assert int(row["attempts"] or 0) >= 1
+
+
+def test_worker_iteration_marks_failed_actual_batch_run_item(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "worker_forge_batch_target.db"
+    conn = init_db(db_path)
+    now = "2026-04-01T00:00:00.000000Z"
+
+    conn.execute(
+        """
+        INSERT INTO work_items (
+            id, parent_id, root_id, kind, title, description, status,
+            creator_role, owner_role, planning_depth, priority, created_at, updated_at
+        ) VALUES ('atom_claimed', NULL, 'atom_claimed', 'atom', 'Claimed atom', '', 'ready_for_work',
+                  'creator', 'forge', 0, 10, ?, ?)
+        """,
+        (now, now),
+    )
+    conn.execute(
+        """
+        INSERT INTO work_item_queue (work_item_id, queue_name, priority, available_at)
+        VALUES ('atom_claimed', 'forge_inbox', 100, ?)
+        """,
+        (now,),
+    )
+
+    conn.execute(
+        """
+        INSERT INTO work_items (
+            id, parent_id, root_id, kind, title, description, status,
+            creator_role, owner_role, planning_depth, priority, created_at, updated_at
+        ) VALUES ('atom_real_fail', NULL, 'atom_real_fail', 'atom', 'Really failed atom', '', 'in_progress',
+                  'creator', 'forge', 0, 1, ?, ?)
+        """,
+        (now, now),
+    )
+    conn.execute(
+        """
+        INSERT INTO work_item_queue (work_item_id, queue_name, priority, available_at, lease_owner, lease_until)
+        VALUES ('atom_real_fail', 'forge_inbox', 100, ?, 'worker-batch', '2026-04-01T01:00:00.000000Z')
+        """,
+        (now,),
+    )
+    conn.commit()
+    conn.close()
+
+    factory = worker_module.wire(db_path)
+
+    def fake_forge_batch_crash(_orch):
+        raise worker_module.forge.ForgeBatchRunError(
+            "atom_real_fail",
+            "run_real_fail",
+            RuntimeError("boom in batch run"),
+        )
+
+    monkeypatch.setattr(worker_module.forge, "run_forge_queued_runs", fake_forge_batch_crash)
+
+    worked = worker_iteration(factory, "worker-batch")
+
+    assert worked is True
+
+    claimed_status = factory["conn"].execute(
+        "SELECT status FROM work_items WHERE id = 'atom_claimed'"
+    ).fetchone()["status"]
+    failed_status = factory["conn"].execute(
+        "SELECT status FROM work_items WHERE id = 'atom_real_fail'"
+    ).fetchone()["status"]
+    failed_lease_owner = factory["conn"].execute(
+        "SELECT lease_owner FROM work_item_queue WHERE work_item_id = 'atom_real_fail'"
+    ).fetchone()["lease_owner"]
+
+    assert claimed_status == "in_progress"
+    assert failed_status in {"ready_for_work", "dead"}
+    assert failed_lease_owner is None
