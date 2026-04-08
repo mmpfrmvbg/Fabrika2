@@ -24,7 +24,25 @@ def _coerce_payload_dict(payload: dict[str, Any] | str | Any | None) -> dict[str
 class FactoryLogger:
     def __init__(self, conn: sqlite3.Connection | None) -> None:
         self.conn = conn
+        self._owns_connection = False
         self._py_logger = logging.getLogger("factory")
+
+    def take_connection_ownership(self) -> None:
+        """Назначить текущий connection как управляемый этим logger."""
+        self._owns_connection = True
+
+    def close(self) -> None:
+        if not self._owns_connection or self.conn is None:
+            return
+        conn = self.conn
+        self.conn = None
+        conn.close()
+
+    def __enter__(self) -> "FactoryLogger":
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        self.close()
 
     def log(
         self,

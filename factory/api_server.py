@@ -139,13 +139,29 @@ def _get_logger(conn: sqlite3.Connection | None = None) -> FactoryLogger:
     global _logger
     if _logger is None:
         try:
-            tmp_conn = get_connection(_db_path())
-            _logger = FactoryLogger(tmp_conn)
+            if conn is not None:
+                _logger = FactoryLogger(conn)
+            else:
+                tmp_conn = get_connection(_db_path())
+                _logger = FactoryLogger(tmp_conn)
+                _logger.take_connection_ownership()
         except Exception as e:
             # Fallback: logger без connection
             _LOG.debug("Falling back to FactoryLogger(None): %s", e, exc_info=True)
             _logger = FactoryLogger(None)
     return _logger
+
+
+def _close_logger() -> None:
+    global _logger
+    if _logger is None:
+        return
+    try:
+        _logger.close()
+    except Exception as e:
+        _LOG.debug("Failed to close API logger: %s", e, exc_info=True)
+    finally:
+        _logger = None
 
 
 async def require_api_key(request: Request) -> None:
@@ -347,6 +363,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         _orch_thread.stop()
+        _close_logger()
 
 
 app = FastAPI(title="Factory read-only API", version="1.0", lifespan=lifespan)
