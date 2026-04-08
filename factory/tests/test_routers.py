@@ -77,3 +77,20 @@ def test_router_endpoints_are_reachable_with_api_key(
 ) -> None:
     response = api_client.get(endpoint, headers={"X-API-Key": "test-key"})
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "router_module",
+    [
+        "admin_health.py",
+        "chat.py",
+        "orchestrator.py",
+        "qwen.py",
+        "work_items.py",
+    ],
+)
+def test_routers_import_shared_deps_module(router_module: str) -> None:
+    source = (Path(__file__).resolve().parents[1] / "routers" / router_module).read_text()
+
+    assert "from factory import deps as srv" in source
+    assert "from factory import api_server as srv" not in source

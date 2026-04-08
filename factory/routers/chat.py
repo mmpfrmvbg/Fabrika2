@@ -4,7 +4,7 @@ from fastapi import APIRouter
 
 
 def build_router() -> APIRouter:
-    from factory import api_server as srv
+    from factory import deps as srv
 
     router = APIRouter(tags=["chat"])
     router.add_api_route("/api/chat/qwen", srv.chat_qwen_create, methods=["POST"])
