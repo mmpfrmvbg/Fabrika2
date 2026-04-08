@@ -176,7 +176,7 @@ def worker_iteration(factory: dict[str, Any], worker_id: str) -> bool:
             pass
         return False
     if not wi_id:
-        orphan = conn.execute(
+        orphan_rows = conn.execute(
             """
             SELECT r.work_item_id
             FROM runs r
@@ -186,17 +186,17 @@ def worker_iteration(factory: dict[str, Any], worker_id: str) -> bool:
               AND r.status = 'queued'
               AND wi.status = 'in_progress'
             ORDER BY r.started_at ASC
-            LIMIT 1
+            LIMIT 5
             """
-        ).fetchone()
-        if orphan:
-            orphan_wi_id = orphan["work_item_id"]
-            _touch_work_item_heartbeat(conn, orphan_wi_id)
+
+        ).fetchall()
+        orphan_ids = [row["work_item_id"] for row in orphan_rows]
+        if orphan_ids:
+            forge.run_forge_queued_runs(orch)
             conn.commit()
-            with _heartbeat_loop(db_path, orphan_wi_id):
-                forge.run_forge_queued_runs(orch)
-                conn.commit()
-                drain_atom_downstream(orch, orphan_wi_id)
+            for orphan_id in orphan_ids:
+                drain_atom_downstream(orch, orphan_id)
+
             conn.commit()
             return True
         return False
