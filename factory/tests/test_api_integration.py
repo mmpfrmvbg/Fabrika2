@@ -395,11 +395,9 @@ def test_post_runs_preserves_correlation_id_in_run_and_events(api_client: TestCl
         db_conn.close()
 
 
-def test_legacy_work_items_list_supports_dead_status_filter(api_client: TestClient) -> None:
+def test_legacy_work_items_list_endpoint_removed(api_client: TestClient) -> None:
     response = api_client.get("/api/work_items?status=dead")
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["items"] == []
+    assert response.status_code in (401, 404)
 
 
 def test_api_health_returns_503_on_sqlite_operational_error(
