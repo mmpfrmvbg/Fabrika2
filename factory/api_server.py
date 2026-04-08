@@ -1175,29 +1175,6 @@ def get_task_bundle(wi_id: str = FastPath(..., min_length=1, max_length=128)) ->
         conn.close()
 
 
-def work_items_legacy(
-    id: str | None = None,
-    status: str | None = None,
-    limit: int = Query(default=100, ge=1, le=1000),
-    offset: int = Query(default=0, ge=0),
-) -> dict[str, Any]:
-    conn = _open_ro()
-    try:
-        if not id or not id.strip():
-            return get_work_items_paginated(
-                conn,
-                limit=limit,
-                offset=offset,
-                filters={"status": status},
-            )
-        wi = conn.execute("SELECT * FROM work_items WHERE id = ?", (id,)).fetchone()
-        if not wi:
-            raise HTTPException(status_code=404, detail="not found")
-        return {"work_item": _row(wi)}
-    finally:
-        conn.close()
-
-
 def create_work_item_legacy(
     body: WorkItemCreateRequest | dict[str, Any] = Body(...),
     _: None = Depends(require_api_key),

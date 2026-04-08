@@ -19,7 +19,6 @@ def build_router() -> APIRouter:
     router.add_api_route("/api/tasks/{wi_id}/forge-run", srv.post_tasks_forge_run_compat, methods=["POST"])
     router.add_api_route("/api/work-items/{wi_id}", srv.get_work_item, methods=["GET"])
     router.add_api_route("/api/tasks/{wi_id}", srv.get_task_bundle, methods=["GET"])
-    router.add_api_route("/api/work_items", srv.work_items_legacy, methods=["GET"])
     router.add_api_route("/api/work_items", srv.create_work_item_legacy, methods=["POST"])
     router.add_api_route("/api/runs", srv.create_run, methods=["POST"])
     router.add_api_route("/api/work-items/{wi_id}/runs", srv.runs_for_work_item, methods=["GET"])
