@@ -626,19 +626,32 @@ def _run_by_run_id(conn: sqlite3.Connection, run_id: str) -> dict | None:
     return {"run": _run_record_with_steps(conn, r)}
 
 
-def _runs_detail(conn: sqlite3.Connection, work_item_id: str) -> dict:
-    """Все прогоны по атому/задаче с шагами и file_changes (таблица ``runs``, не forge_runs)."""
-    runs_rows = conn.execute(
-        """
-        SELECT r.id, r.work_item_id, r.agent_id, r.role, r.run_type, r.status,
-               r.started_at, r.finished_at, r.git_branch, r.error_summary,
-               r.source_run_id, r.dry_run
-        FROM runs r
-        WHERE r.work_item_id = ?
-        ORDER BY r.started_at DESC
-        """,
-        (work_item_id,),
-    ).fetchall()
+def _runs_detail(conn: sqlite3.Connection, work_item_id: str, run_id: str | None = None) -> dict:
+    """Прогоны по атому/задаче с шагами и file_changes (таблица ``runs``, не forge_runs)."""
+    if run_id:
+        runs_rows = conn.execute(
+            """
+            SELECT r.id, r.work_item_id, r.agent_id, r.role, r.run_type, r.status,
+                   r.started_at, r.finished_at, r.git_branch, r.error_summary,
+                   r.source_run_id, r.dry_run
+            FROM runs r
+            WHERE r.work_item_id = ? AND r.id = ?
+            ORDER BY r.started_at DESC
+            """,
+            (work_item_id, run_id),
+        ).fetchall()
+    else:
+        runs_rows = conn.execute(
+            """
+            SELECT r.id, r.work_item_id, r.agent_id, r.role, r.run_type, r.status,
+                   r.started_at, r.finished_at, r.git_branch, r.error_summary,
+                   r.source_run_id, r.dry_run
+            FROM runs r
+            WHERE r.work_item_id = ?
+            ORDER BY r.started_at DESC
+            """,
+            (work_item_id,),
+        ).fetchall()
     runs_out = [_run_record_with_steps(conn, r) for r in runs_rows]
     return {"work_item_id": work_item_id, "runs": runs_out}
 
@@ -1126,7 +1139,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 if not row:
                     _json_response(self, {"error": "not_found", "run_id": rid_q}, 404)
                     return
-                _json_response(self, _runs_detail(conn, row["work_item_id"]))
+                _json_response(self, _runs_detail(conn, row["work_item_id"], rid_q))
                 return
             runs_rest = path[len("/api/runs/") :] if path.startswith("/api/runs/") else ""
             if runs_rest:
