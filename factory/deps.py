@@ -11,8 +11,60 @@ from typing import Any
 
 from .db import ensure_schema, get_connection, init_db
 
-# Endpoints exposed for router wiring.
-_API_ENDPOINT_NAMES: tuple[str, ...] = (
+
+_ROUTER_BY_ENDPOINT: dict[str, str] = {
+    "health": "api_server",
+    "api_health": "api_server",
+    "api_metrics": "api_server",
+    "orchestrator_status": "api_server",
+    "orchestrator_start": "api_server",
+    "orchestrator_stop": "api_server",
+    "orchestrator_health": "api_server",
+    "orchestrator_tick": "api_server",
+    "chat_qwen_create": "api_server",
+    "chat_qwen_stream": "api_server",
+    "api_analytics": "analytics",
+    "stats": "analytics",
+    "api_workers_status": "analytics",
+    "journal": "journal",
+    "judgements": "journal",
+    "judge_verdicts": "journal",
+    "tree": "agents",
+    "list_improvements": "improvements",
+    "approve_improvement": "improvements",
+    "reject_improvement": "improvements",
+    "convert_improvement": "improvements",
+    "visions": "visions",
+    "create_vision": "visions",
+    "decompose_vision_endpoint": "visions",
+    "queue_forge_inbox": "work_items",
+    "fsm_work_item": "work_items",
+    "agents_list_compat": "agents",
+    "failure_clusters": "work_items",
+    "failures": "work_items",
+    "hr_stub": "work_items",
+    "qwen_fix_endpoint": "qwen",
+    "create_run": "runs",
+    "runs_for_work_item": "runs",
+    "list_runs": "runs",
+    "get_run_detail": "runs",
+    "get_run_steps": "runs",
+    "get_effective_run_id": "runs",
+    "list_events": "runs",
+    "stream_events": "runs",
+}
+
+
+def __getattr__(name: str) -> Callable[..., Any]:
+    module_name = _ROUTER_BY_ENDPOINT.get(name)
+    if module_name is not None:
+        module_path = ".api_server" if module_name == "api_server" else f".routers.{module_name}"
+        module = import_module(module_path, package=__package__)
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+_ENDPOINT_EXPORTS: list[str] = [
     "health",
     "api_health",
     "api_metrics",
@@ -44,77 +96,15 @@ _API_ENDPOINT_NAMES: tuple[str, ...] = (
     "failures",
     "hr_stub",
     "qwen_fix_endpoint",
-)
-
-
-def _api_server() -> Any:
-    from . import api_server
-
-    return api_server
-
-
-_ROUTER_BY_ENDPOINT: dict[str, str] = {
-    "health": "api_server",
-    "api_health": "api_server",
-    "api_metrics": "api_server",
-    "orchestrator_status": "api_server",
-    "orchestrator_start": "api_server",
-    "orchestrator_stop": "api_server",
-    "orchestrator_health": "api_server",
-    "orchestrator_tick": "api_server",
-    "chat_qwen_create": "api_server",
-    "chat_qwen_stream": "api_server",
-    "api_analytics": "analytics",
-    "stats": "analytics",
-    "api_workers_status": "analytics",
-    "journal": "journal",
-    "judgements": "journal",
-    "judge_verdicts": "journal",
-    "tree": "agents",
-    "list_improvements": "improvements",
-    "approve_improvement": "improvements",
-    "reject_improvement": "improvements",
-    "convert_improvement": "improvements",
-    "visions": "visions",
-    "create_vision": "visions",
-    "decompose_vision_endpoint": "visions",
-    "queue_forge_inbox": "journal",
-    "fsm_work_item": "journal",
-    "agents_list_compat": "agents",
-    "failure_clusters": "journal",
-    "failures": "journal",
-    "hr_stub": "agents",
-    "qwen_fix_endpoint": "api_server",
-}
-
-
-def __getattr__(name: str) -> Callable[..., Any]:
-    module_name = _ROUTER_BY_ENDPOINT.get(name)
-    if module_name is not None:
-        module_path = ".api_server" if module_name == "api_server" else f".routers.{module_name}"
-        module = import_module(module_path, package=__package__)
-        return getattr(module, name)
-    if name in {
-        "create_run",
-        "runs_for_work_item",
-        "list_runs",
-        "get_run_detail",
-        "get_run_steps",
-        "get_effective_run_id",
-        "list_events",
-        "stream_events",
-    }:
-        from .routers import runs
-
-        return getattr(runs, name)
-    if name in _API_ENDPOINT_NAMES:
-        return getattr(_api_server(), name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-__all__ = [
-    "ensure_schema",
-    "get_connection",
-    "init_db",
-    *_API_ENDPOINT_NAMES,
+    "create_run",
+    "runs_for_work_item",
+    "list_runs",
+    "get_run_detail",
+    "get_run_steps",
+    "get_effective_run_id",
+    "list_events",
+    "stream_events",
 ]
+
+
+__all__ = ["ensure_schema", "get_connection", "init_db", *_ENDPOINT_EXPORTS]
