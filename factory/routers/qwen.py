@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
 from factory.config import AccountManager
+from factory.db import DB_PATH, get_connection
 from factory.logging import FactoryLogger
 from factory.qwen_cli_runner import run_qwen_cli
 from factory.schemas import QwenFixRequest
@@ -25,8 +27,6 @@ def qwen_fix_endpoint(
     Запрос исправления ошибки у Qwen.
     Используется для авто-исправления Forge ошибок.
     """
-    import factory.api_server as api_server
-
     error_type = str(body.type or "unknown").strip()
     message = body.message.strip()
     context = body.context
@@ -55,7 +55,7 @@ def qwen_fix_endpoint(
 """
 
     try:
-        with api_server._open_rw() as conn:
+        with get_connection(DB_PATH) as conn:
             logger = FactoryLogger(conn)
             am = AccountManager(conn, logger)
             result = run_qwen_cli(
@@ -80,10 +80,10 @@ def qwen_fix_endpoint(
         return {"fix": fix, "ok": True}
 
     except json.JSONDecodeError:
-        api_server._LOG.exception("Qwen fix JSON error")
+        logging.getLogger(__name__).exception("Qwen fix JSON error")
         raise HTTPException(status_code=500, detail={"error": "Invalid JSON from Qwen"})
     except Exception:
-        api_server._LOG.exception("Qwen fix error")
+        logging.getLogger(__name__).exception("Qwen fix error")
         raise HTTPException(status_code=500, detail={"error": "Fix failed"})
 
 

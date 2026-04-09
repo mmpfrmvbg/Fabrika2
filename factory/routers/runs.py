@@ -10,7 +10,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Body, Depends, HTTPException, Path as FastPath, Query, Request
 from fastapi.responses import StreamingResponse
 
-from factory.db import gen_id, resolve_effective_run_id
+from factory.db import DB_PATH, gen_id, get_connection, resolve_effective_run_id
 from factory.logging import FactoryLogger
 from factory.models import EventType, Role
 from factory.schemas import RunCreateRequest
@@ -60,11 +60,9 @@ def create_run(
     body: RunCreateRequest = Body(...),
     _: None = Depends(_require_api_key),
 ) -> Any:
-    import factory.api_server as api_server
-
     wi_id = body.work_item_id.strip()
     correlation_id = (body.correlation_id or "").strip() or str(uuid4())
-    conn = api_server._open_rw()
+    conn = get_connection(DB_PATH)
     try:
         wi = conn.execute("SELECT id FROM work_items WHERE id = ?", (wi_id,)).fetchone()
         if not wi:
@@ -104,9 +102,7 @@ def create_run(
 
 
 def runs_for_work_item(wi_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         rows = conn.execute(
             """
@@ -126,9 +122,7 @@ def list_runs(
     work_item_id: str | None = None,
     limit: int = Query(120, ge=1, le=500),
 ) -> dict[str, Any]:
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         if work_item_id:
             rows = conn.execute(
@@ -155,9 +149,7 @@ def list_runs(
 
 
 def get_run_detail(run_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         r = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
         if r:
@@ -190,9 +182,7 @@ def get_run_detail(run_id: str = FastPath(..., min_length=1, max_length=128)) ->
 
 
 def get_run_steps(run_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         effective_run_id = resolve_effective_run_id(conn, run_id) or run_id
         steps = conn.execute(
@@ -207,9 +197,7 @@ def get_run_steps(run_id: str = FastPath(..., min_length=1, max_length=128)) -> 
 
 
 def get_effective_run_id(run_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         r = conn.execute("SELECT id FROM runs WHERE id = ?", (run_id,)).fetchone()
         if not r:
@@ -225,9 +213,7 @@ def list_events(
     event_type: str | None = None,
     stream: bool = False,
 ) -> Union[dict[str, Any], StreamingResponse]:
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         q = "SELECT * FROM event_log WHERE 1=1"
         params: list[Any] = []
@@ -259,14 +245,12 @@ async def stream_events(
     last_event_id: int = Query(default=0, ge=0),
     once: bool = Query(default=False),
 ) -> StreamingResponse:
-    import factory.api_server as api_server
-
     async def _event_stream() -> Any:
         cursor = int(last_event_id)
         while True:
             if await request.is_disconnected():
                 break
-            conn = api_server._open_ro()
+            conn = get_connection(DB_PATH, read_only=True)
             try:
                 rows = conn.execute(
                     """
