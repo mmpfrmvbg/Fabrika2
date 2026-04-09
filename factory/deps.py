@@ -57,7 +57,15 @@ def __getattr__(name: str) -> Callable[..., Any]:
         from .routers import improvements
 
         return getattr(improvements, name)
-    if name in {"journal", "judgements", "judge_verdicts"}:
+    if name in {
+        "journal",
+        "judgements",
+        "judge_verdicts",
+        "queue_forge_inbox",
+        "fsm_work_item",
+        "failure_clusters",
+        "failures",
+    }:
         from .routers import journal
 
         return getattr(journal, name)
@@ -69,10 +77,6 @@ def __getattr__(name: str) -> Callable[..., Any]:
         "api_analytics",
         "stats",
         "api_workers_status",
-        "queue_forge_inbox",
-        "fsm_work_item",
-        "failure_clusters",
-        "failures",
     }:
         from .routers import analytics
 
