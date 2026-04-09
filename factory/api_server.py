@@ -685,45 +685,6 @@ def api_workers_status() -> dict[str, Any]:
 
 
 
-def judgements(
-    work_item_id: str | None = None,
-    limit: int = Query(100, ge=1, le=500),
-) -> dict[str, Any]:
-    conn = _open_ro()
-    try:
-        return {"items": _load_judgements_items(conn, work_item_id, limit)}
-    finally:
-        conn.close()
-
-
-
-def queue_forge_inbox() -> dict[str, Any]:
-    """Совместимость с factory-os.html (тот же контракт, что legacy ``dashboard_api``)."""
-    conn = _open_ro()
-    try:
-        return api_forge_inbox_simple(conn)
-    finally:
-        pass
-
-def judge_verdicts(
-    work_item_id: str | None = None,
-    limit: int = Query(100, ge=1, le=500),
-) -> list[dict[str, Any]]:
-    """Compatibility endpoint: always returns a JSON list for dashboard verdict pages."""
-    conn = _open_ro()
-    try:
-        return _load_judgements_items(conn, work_item_id, limit)
-    finally:
-        conn.close()
-
-
-def fsm_work_item() -> dict[str, Any]:
-    conn = _open_ro()
-    try:
-        return _fsm_stub(conn)
-    finally:
-        pass
-
 def tree() -> dict[str, Any]:
     conn = _open_ro()
     try:
@@ -761,6 +722,7 @@ def _include_domain_routers() -> None:
     from .routers.journal import build_router as build_journal_router
     from .routers.orchestrator import build_router as build_orchestrator_router
     from .routers.improvements import build_router as build_improvements_router
+    from .routers.judgements import build_judgements_router
     from .routers.qwen import build_router as build_qwen_router
     from .routers.runs import build_router as build_runs_router
     from .routers.visions import build_router as build_visions_router
@@ -771,6 +733,7 @@ def _include_domain_routers() -> None:
     app.include_router(build_work_items_router())
     app.include_router(build_runs_router())
     app.include_router(build_journal_router())
+    app.include_router(build_judgements_router())
     app.include_router(build_orchestrator_router())
     app.include_router(build_improvements_router())
     app.include_router(build_visions_router())

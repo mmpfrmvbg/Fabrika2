@@ -57,16 +57,18 @@ def __getattr__(name: str) -> Callable[..., Any]:
         from .routers import improvements
 
         return getattr(improvements, name)
-    if name in {"journal", "judgements", "judge_verdicts", "tree"}:
+    if name in {"journal", "tree"}:
         from .routers import journal
 
         return getattr(journal, name)
+    if name in {"judgements", "queue_forge_inbox", "judge_verdicts", "fsm_work_item"}:
+        from .routers import judgements
+
+        return getattr(judgements, name)
     if name in {
         "api_analytics",
         "stats",
         "api_workers_status",
-        "queue_forge_inbox",
-        "fsm_work_item",
         "agents_list_compat",
         "failure_clusters",
         "failures",
@@ -92,17 +94,26 @@ def __getattr__(name: str) -> Callable[..., Any]:
         from .routers import runs
 
         return getattr(runs, name)
-    if name in _API_ENDPOINT_NAMES:
-        if name in {
-        "list_work_items", "export_work_items", "work_items_tree_endpoint",
-        "post_work_item_cancel", "post_work_item_archive", "patch_work_item",
-        "delete_work_item_endpoint", "post_bulk_archive", "post_work_item_run",
-        "post_tasks_forge_run_compat", "get_work_item", "get_task_bundle",
-        "create_work_item_legacy"
+    if name in {
+        "list_work_items",
+        "export_work_items",
+        "work_items_tree_endpoint",
+        "post_work_item_cancel",
+        "post_work_item_archive",
+        "patch_work_item",
+        "delete_work_item_endpoint",
+        "post_bulk_archive",
+        "post_work_item_run",
+        "post_tasks_forge_run_compat",
+        "get_work_item",
+        "get_task_bundle",
+        "create_work_item_legacy",
     }:
         from .routers import work_items
+
         return getattr(work_items, name)
-    return getattr(_api_server(), name)
+    if name in _API_ENDPOINT_NAMES:
+        return getattr(_api_server(), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
