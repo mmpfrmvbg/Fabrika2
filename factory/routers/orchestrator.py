@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timezone
@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
+from factory.db import DB_PATH, get_connection
 from factory.models import Role
 
 
@@ -72,9 +73,9 @@ def _orchestrator_heartbeat_from_conn(conn: sqlite3.Connection) -> dict[str, Any
 
 
 def api_metrics() -> dict[str, Any]:
-    import factory.api_server as api_server
+    from factory.api_server import _tick_interval_seconds
 
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         work_items_total = int(conn.execute("SELECT COUNT(*) AS c FROM work_items").fetchone()["c"])
         work_items_by_status = {
@@ -127,7 +128,7 @@ def api_metrics() -> dict[str, Any]:
                       AND julianday(event_time) >= julianday('now', ?)
                 ) AS is_running
                 """,
-                (f"-{2 * api_server._tick_interval_seconds()} seconds",),
+                (f"-{2 * _tick_interval_seconds()} seconds",),
             ).fetchone()["is_running"]
         )
         return {
@@ -144,48 +145,46 @@ def api_metrics() -> dict[str, Any]:
 
 
 def orchestrator_status() -> dict[str, Any]:
-    import factory.api_server as api_server
+    from factory.api_server import _orch_thread
 
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         qd = _queue_depths_from_conn(conn)
     finally:
         conn.close()
     return {
-        "running": bool(api_server._orch_thread.running),
-        "last_tick": api_server._orch_thread.last_tick,
-        "ticks_total": int(api_server._orch_thread.ticks_total),
-        "items_processed": int(api_server._orch_thread.items_processed_total),
-        "last_tick_processed": dict(api_server._orch_thread.last_tick_processed or {}),
+        "running": bool(_orch_thread.running),
+        "last_tick": _orch_thread.last_tick,
+        "ticks_total": int(_orch_thread.ticks_total),
+        "items_processed": int(_orch_thread.items_processed_total),
+        "last_tick_processed": dict(_orch_thread.last_tick_processed or {}),
         "queue_depths": qd,
     }
 
 
 async def _require_api_key(request: Request) -> None:
-    import factory.api_server as api_server
+    from factory.api_server import require_api_key
 
-    await api_server.require_api_key(request)
+    await require_api_key(request)
 
 
 def orchestrator_start(_: None = Depends(_require_api_key)) -> dict[str, Any]:
-    import factory.api_server as api_server
+    from factory.api_server import _orch_thread
 
-    api_server._orch_thread.start()
+    _orch_thread.start()
     return orchestrator_status()
 
 
 def orchestrator_stop(_: None = Depends(_require_api_key)) -> dict[str, Any]:
-    import factory.api_server as api_server
+    from factory.api_server import _orch_thread
 
-    api_server._orch_thread.stop()
+    _orch_thread.stop()
     return orchestrator_status()
 
 
 def orchestrator_health() -> dict[str, Any]:
     """Heartbeat по event_log (actor_role=orchestrator), не путать с /api/orchestrator/status (поток tick)."""
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         h = _orchestrator_heartbeat_from_conn(conn)
         return {"ok": True, **h}
@@ -194,12 +193,12 @@ def orchestrator_health() -> dict[str, Any]:
 
 
 def orchestrator_tick(_: None = Depends(_require_api_key)) -> dict[str, Any]:
-    import factory.api_server as api_server
+    from factory.api_server import _orch_thread
 
-    processed = api_server._orch_thread.tick_once()
+    processed = _orch_thread.tick_once()
     if processed:
-        api_server._orch_thread.items_processed_total += sum(processed.values())
-    conn = api_server._open_ro()
+        _orch_thread.items_processed_total += sum(processed.values())
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         qd = _queue_depths_from_conn(conn)
     finally:
@@ -209,10 +208,10 @@ def orchestrator_tick(_: None = Depends(_require_api_key)) -> dict[str, Any]:
         "processed": processed,
         "queue_depths": qd,
         "status": {
-            "running": bool(api_server._orch_thread.running),
-            "last_tick": api_server._orch_thread.last_tick,
-            "ticks_total": int(api_server._orch_thread.ticks_total),
-            "items_processed": int(api_server._orch_thread.items_processed_total),
+            "running": bool(_orch_thread.running),
+            "last_tick": _orch_thread.last_tick,
+            "ticks_total": int(_orch_thread.ticks_total),
+            "items_processed": int(_orch_thread.items_processed_total),
         },
     }
 
