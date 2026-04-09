@@ -50,7 +50,7 @@ from .analytics_api import compute_analytics
 from .dashboard_unified_journal import JournalFilters, api_journal_query
 from .workers_status import workers_status_payload
 from .work_items_tree import subtree_for_root_id
-from .db import _row, _rows, ensure_schema, gen_id, get_connection, resolve_effective_run_id
+from .db import _db_path, _open_ro, _open_rw, _row, _rows, ensure_schema, gen_id, get_connection, resolve_effective_run_id
 from .logging import FactoryLogger
 from .models import EventType, Role
 from .work_items import WorkItemOps
@@ -500,29 +500,6 @@ async def rate_limit_middleware(
     return response
 
 
-def _db_path() -> Path:
-    raw = os.environ.get("FACTORY_DB") or os.environ.get("FACTORY_DB_PATH")
-    return resolve_db_path(Path(raw)) if raw else resolve_db_path()
-
-
-def _open_ro() -> sqlite3.Connection:
-    path = _db_path()
-    if not path.exists():
-        raise HTTPException(status_code=503, detail=f"Database not found: {path}")
-    try:
-        return get_connection(path, read_only=True)
-    except FileNotFoundError:
-        raise HTTPException(status_code=503, detail=f"Database not found: {path}") from None
-
-
-def _open_rw() -> sqlite3.Connection:
-    """
-    RW-соединение для минимальных write-операций дашборда (создание Vision).
-    В отличие от `_open_ro` не включает `query_only`.
-    """
-    path = _db_path()
-    ensure_schema(path)
-    return get_connection(path)
 
 
 
