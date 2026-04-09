@@ -487,9 +487,6 @@ async def rate_limit_middleware(
 
 
 
-_EDITABLE_STATUSES = frozenset(
-    {"draft", "planned", "ready_for_judge", "judge_rejected"}
-)
 
 
 
