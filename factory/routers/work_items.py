@@ -62,7 +62,7 @@ def _serialize_export_work_items(conn: sqlite3.Connection) -> list[dict[str, Any
         ).fetchall()
         events = conn.execute(
             """
-            SELECT id, event_time, event_type, actor_role, severity, message, payload_json
+            SELECT id, event_time, event_type, actor_role, severity, message, payload
             FROM event_log
             WHERE work_item_id = ?
             ORDER BY event_time DESC, id DESC
