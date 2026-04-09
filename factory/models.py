@@ -32,6 +32,16 @@ class WorkItemStatus(str, Enum):
     ARCHIVED = "archived"
 
 
+_EDITABLE_STATUSES = frozenset(
+    {
+        WorkItemStatus.DRAFT.value,
+        WorkItemStatus.PLANNED.value,
+        WorkItemStatus.READY_FOR_JUDGE.value,
+        WorkItemStatus.JUDGE_REJECTED.value,
+    }
+)
+
+
 class Role(str, Enum):
     CREATOR = "creator"
     PLANNER = "planner"
