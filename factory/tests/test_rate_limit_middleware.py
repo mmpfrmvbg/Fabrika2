@@ -18,9 +18,9 @@ def test_normal_request_not_rate_limited(client):
 
 
 def test_rate_limit_429_response(client):
-    from factory import api_server as srv
+    from factory import middleware as m
     meta = {"is_limited": True, "retry_after": 30, "limit": 60, "remaining": 0}
-    with patch.object(srv, "_rate_limit_meta", return_value=meta):
+    with patch.object(m, "_rate_limit_meta", return_value=meta):
         resp = client.get("/health", headers={"X-API-Key": "test-key"})
     assert resp.status_code == 429
     assert resp.json().get("detail") == "Rate limit exceeded"
@@ -28,9 +28,9 @@ def test_rate_limit_429_response(client):
 
 
 def test_rate_limit_headers_on_success(client):
-    from factory import api_server as srv
+    from factory import middleware as m
     meta = {"is_limited": False, "retry_after": 0, "limit": 60, "remaining": 55}
-    with patch.object(srv, "_rate_limit_meta", return_value=meta):
+    with patch.object(m, "_rate_limit_meta", return_value=meta):
         resp = client.get("/health", headers={"X-API-Key": "test-key"})
     assert "X-RateLimit-Limit" in resp.headers
     assert resp.headers["X-RateLimit-Remaining"] == "55"
