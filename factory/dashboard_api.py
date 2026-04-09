@@ -222,7 +222,10 @@ def _connect() -> sqlite3.Connection:
 
 
 def _cors_headers(handler: BaseHTTPRequestHandler) -> None:
-    handler.send_header("Access-Control-Allow-Origin", "http://localhost")
+    handler.send_header(
+        "Access-Control-Allow-Origin",
+        os.getenv("DASHBOARD_CORS_ORIGIN", "http://localhost"),
+    )
     handler.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
     handler.send_header("Access-Control-Allow-Headers", "*")
 
