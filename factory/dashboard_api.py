@@ -22,6 +22,7 @@ POST ``/api/tasks/<id>/children`` — дочерний epic|story|task|atom (``p
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import os
@@ -278,9 +279,22 @@ def _dashboard_public_origin(handler: BaseHTTPRequestHandler) -> str:
         port = 80
     if isinstance(bind_host, bytes):
         bind_host = bind_host.decode("utf-8", "replace")
-    bind_s = str(bind_host)
-    if bind_s in ("0.0.0.0", "::"):
-        bind_s = "127.0.0.1"
+    bind_s = str(bind_host).strip()
+
+    def _is_concrete_host(value: str) -> bool:
+        v = value.strip()
+        if not v or v in {"0.0.0.0", "::", "*"}:
+            return False
+        if v.startswith("[") and v.endswith("]"):
+            v = v[1:-1]
+        try:
+            ipaddress.ip_address(v)
+            return True
+        except ValueError:
+            return bool(re.fullmatch(r"[A-Za-z0-9.-]+", v))
+
+    if not _is_concrete_host(bind_s):
+        bind_s = os.getenv("DASHBOARD_PUBLIC_HOST", "127.0.0.1").strip() or "127.0.0.1"
     if ":" in bind_s and not bind_s.startswith("["):
         return f"http://[{bind_s}]:{port}".rstrip("/")
     return f"http://{bind_s}:{port}".rstrip("/")
