@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from typing import Any
 
 from fastapi import APIRouter, Query
 
+from factory.db import DB_PATH, get_connection
 from factory.dashboard_api import _fsm_stub
 from factory.dashboard_live_read import api_forge_inbox_simple
 
@@ -13,8 +15,6 @@ from factory.dashboard_live_read import api_forge_inbox_simple
 def _load_judgements_items(
     conn: sqlite3.Connection, work_item_id: str | None, limit: int
 ) -> list[dict[str, Any]]:
-    import factory.api_server as api_server
-
     items: list[dict[str, Any]] = []
     qjv = """
         SELECT id, work_item_id, verdict, payload_json, failed_guards_json,
@@ -31,7 +31,7 @@ def _load_judgements_items(
     try:
         jv = conn.execute(qjv, pjv).fetchall()
     except sqlite3.OperationalError as e:
-        api_server._LOG.debug("judge_verdicts table unavailable while loading judgements: %s", e)
+        logging.getLogger(__name__).debug("judge_verdicts table unavailable while loading judgements: %s", e)
         jv = []
     for r in jv:
         issues: Any = []
@@ -48,7 +48,7 @@ def _load_judgements_items(
             if r["failed_guards_json"]:
                 issues = json.loads(r["failed_guards_json"])
         except (json.JSONDecodeError, TypeError) as e:
-            api_server._LOG.debug("Failed to parse failed_guards_json for verdict %s: %s", r["id"], e)
+            logging.getLogger(__name__).debug("Failed to parse failed_guards_json for verdict %s: %s", r["id"], e)
         used_el = None
         if isinstance(p, dict):
             used_el = p.get("used_event_log")
@@ -80,7 +80,7 @@ def _load_judgements_items(
     try:
         rr = conn.execute(qrr, prr).fetchall()
     except sqlite3.OperationalError as e:
-        api_server._LOG.debug("review_results table unavailable while loading judgements: %s", e)
+        logging.getLogger(__name__).debug("review_results table unavailable while loading judgements: %s", e)
         rr = []
     for r in rr:
         issues = []
@@ -109,9 +109,7 @@ def judgements(
     work_item_id: str | None = None,
     limit: int = Query(100, ge=1, le=500),
 ) -> dict[str, Any]:
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         return {"items": _load_judgements_items(conn, work_item_id, limit)}
     finally:
@@ -120,9 +118,7 @@ def judgements(
 
 def queue_forge_inbox() -> dict[str, Any]:
     """Совместимость с factory-os.html (тот же контракт, что legacy ``dashboard_api``)."""
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         return api_forge_inbox_simple(conn)
     finally:
@@ -134,9 +130,7 @@ def judge_verdicts(
     limit: int = Query(100, ge=1, le=500),
 ) -> list[dict[str, Any]]:
     """Compatibility endpoint: always returns a JSON list for dashboard verdict pages."""
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         return _load_judgements_items(conn, work_item_id, limit)
     finally:
@@ -144,9 +138,7 @@ def judge_verdicts(
 
 
 def fsm_work_item() -> dict[str, Any]:
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         return _fsm_stub(conn)
     finally:

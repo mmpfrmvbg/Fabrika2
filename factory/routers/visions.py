@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from typing import Any
 
@@ -9,6 +10,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Path as FastPath, R
 from factory.agents.planner import decompose_with_planner
 from factory.config import AccountManager
 from factory.contracts.planner import PlannerInput
+from factory.db import DB_PATH, get_connection
 from factory.logging import FactoryLogger
 from factory.models import EventType, Role
 from factory.qwen_cli_runner import run_qwen_cli
@@ -18,15 +20,13 @@ from factory.work_items_tree import subtree_for_root_id
 
 
 async def _require_api_key_dep(request: Request) -> None:
-    import factory.api_server as api_server
+    from factory.deps import require_api_key
 
-    await api_server.require_api_key(request)
+    await require_api_key(request)
 
 
 def visions() -> dict[str, Any]:
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         rows = conn.execute(
             "SELECT id, title, status, created_at FROM work_items WHERE kind = 'vision' ORDER BY created_at DESC"
@@ -104,13 +104,13 @@ def create_vision(
         from factory.db import init_db  # lazy import
 
         try:
-            tmp = init_db(api_server._db_path())
+            tmp = init_db(str(DB_PATH))
             tmp.close()
         except sqlite3.OperationalError as e:
             if "locked" not in str(e).lower():
                 raise
 
-        conn = api_server._open_rw()
+        conn = get_connection(DB_PATH)
         logger = FactoryLogger(conn)
         ops = WorkItemOps(conn, logger)
         vision_id = ops.create_vision(title, description, auto_commit=False)
@@ -174,7 +174,7 @@ def create_vision(
             try:
                 conn.close()
             except Exception as e:
-                api_server._LOG.debug("Failed to close vision creation DB connection: %s", e, exc_info=True)
+                logging.getLogger(__name__).debug("Failed to close vision creation DB connection: %s", e, exc_info=True)
 
 
 def decompose_vision_endpoint(
@@ -186,7 +186,6 @@ def decompose_vision_endpoint(
     Авто-декомпозиция Vision через Qwen.
     Возвращает иерархию: epics → stories → tasks → atoms.
     """
-    import factory.api_server as api_server
     import re
 
     payload = body if isinstance(body, VisionRequest) else VisionRequest.model_validate(body)
@@ -233,7 +232,7 @@ Vision: {title}
 """
 
     try:
-        with api_server._open_rw() as conn:
+        with get_connection(DB_PATH) as conn:
             logger = FactoryLogger(conn)
             am = AccountManager(conn, logger)
             result = run_qwen_cli(
@@ -253,10 +252,10 @@ Vision: {title}
             hierarchy = json.loads(result_text)
         return {"hierarchy": hierarchy, "ok": True}
     except json.JSONDecodeError:
-        api_server._LOG.exception("Qwen decompose JSON error")
+        logging.getLogger(__name__).exception("Qwen decompose JSON error")
         raise HTTPException(status_code=500, detail={"error": "Invalid JSON from Qwen"})
     except Exception:
-        api_server._LOG.exception("Qwen decompose error")
+        logging.getLogger(__name__).exception("Qwen decompose error")
         raise HTTPException(status_code=500, detail={"error": "Decompose failed"})
 
 

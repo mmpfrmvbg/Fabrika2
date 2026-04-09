@@ -1,18 +1,18 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 from typing import Any
 
 from fastapi import APIRouter
 
+from factory.db import DB_PATH, get_connection
 from factory.workers_status import workers_status_payload
 from factory.routers.orchestrator import _orchestrator_heartbeat_from_conn
 
 
 def stats() -> dict[str, Any]:
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         by_kind = {r["kind"]: r["c"] for r in conn.execute("SELECT kind, COUNT(*) AS c FROM work_items GROUP BY kind")}
         by_status = {
@@ -44,12 +44,12 @@ def stats() -> dict[str, Any]:
             improvements_stats = {r["status"]: int(r["c"]) for r in rows}
             improvements_proposed = int(improvements_stats.get("proposed", 0))
         except sqlite3.OperationalError as e:
-            api_server._LOG.debug("improvement_candidates table unavailable in stats: %s", e)
+            logging.getLogger(__name__).debug("improvement_candidates table unavailable in stats: %s", e)
         orch_hb = _orchestrator_heartbeat_from_conn(conn)
         try:
             wst = workers_status_payload(conn)
         except sqlite3.OperationalError as e:
-            api_server._LOG.debug("workers_status_payload fallback due to sqlite operational error: %s", e)
+            logging.getLogger(__name__).debug("workers_status_payload fallback due to sqlite operational error: %s", e)
             wst = {"active": 0, "workers": [], "leases_total": 0}
         return {
             "active_workers": int(wst.get("active") or 0),
@@ -74,9 +74,7 @@ def stats() -> dict[str, Any]:
 
 def api_workers_status() -> dict[str, Any]:
     """Активные lease в очередях (внешние worker-процессы и оркестратор)."""
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         return workers_status_payload(conn)
     finally:
