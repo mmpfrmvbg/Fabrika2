@@ -16,7 +16,7 @@ from factory.composition import wire
 from factory.dashboard_api_read import get_work_items_paginated
 from factory.db import DB_PATH, _row, _rows, gen_id, get_connection
 from factory.logging import FactoryLogger
-from factory.models import EventType, Role
+from factory.models import EventType, Role, _EDITABLE_STATUSES
 from factory.routers.runs import _serialize_runs
 from factory.schemas import BulkArchiveRequest, WorkItemCreateRequest, WorkItemPatchRequest
 from factory.work_item_api_ops import (
@@ -26,9 +26,6 @@ from factory.work_item_api_ops import (
     list_done_vision_roots_ready_to_archive,
 )
 from factory.work_items_tree import build_work_items_tree
-
-
-_EDITABLE_STATUSES = frozenset({"draft", "planned", "ready_for_judge", "judge_rejected"})
 
 
 def _valid_id(value: str, field: str) -> str:
