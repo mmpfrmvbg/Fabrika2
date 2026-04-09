@@ -3,31 +3,10 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter
 
-from factory.analytics_api import compute_analytics
-from factory.dashboard_api import _agents, _fsm_stub
-from factory.dashboard_live_read import api_forge_inbox_simple
 from factory.workers_status import workers_status_payload
-
-
-def api_analytics(
-    period: str = Query("24h", description="24h | 7d | 30d | all"),
-) -> dict[str, Any]:
-    """Метрики фабрики за период (read-only)."""
-    p = (period or "24h").strip().lower()
-    if p not in ("24h", "7d", "30d", "all"):
-        raise HTTPException(
-            status_code=400,
-            detail="period must be one of: 24h, 7d, 30d, all",
-        )
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
-    try:
-        return compute_analytics(conn, p)
-    finally:
-        conn.close()
+from factory.routers.orchestrator import _orchestrator_heartbeat_from_conn
 
 
 def stats() -> dict[str, Any]:
@@ -66,8 +45,6 @@ def stats() -> dict[str, Any]:
             improvements_proposed = int(improvements_stats.get("proposed", 0))
         except sqlite3.OperationalError as e:
             api_server._LOG.debug("improvement_candidates table unavailable in stats: %s", e)
-        from factory.routers.orchestrator import _orchestrator_heartbeat_from_conn
-
         orch_hb = _orchestrator_heartbeat_from_conn(conn)
         try:
             wst = workers_status_payload(conn)
@@ -106,57 +83,25 @@ def api_workers_status() -> dict[str, Any]:
         conn.close()
 
 
-def queue_forge_inbox() -> dict[str, Any]:
-    """Совместимость с factory-os.html (тот же контракт, что legacy ``dashboard_api``)."""
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
-    try:
-        return api_forge_inbox_simple(conn)
-    finally:
-        conn.close()
-
-
-def fsm_work_item() -> dict[str, Any]:
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
-    try:
-        return _fsm_stub(conn)
-    finally:
-        conn.close()
-
-
-def agents_list_compat() -> dict[str, Any]:
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
-    try:
-        return _agents(conn)
-    finally:
-        conn.close()
+def _load_failure_clusters() -> dict[str, Any]:
+    return {"clusters": [], "items": []}
 
 
 def failure_clusters() -> dict[str, Any]:
-    return {"clusters": [], "items": []}
+    return _load_failure_clusters()
 
 
 def failures() -> dict[str, Any]:
     """Alias for /api/failure-clusters for frontend compatibility."""
-    return {"clusters": [], "items": []}
+    return _load_failure_clusters()
 
 
-def hr_stub() -> dict[str, Any]:
-    return {"policies": [], "proposals": []}
-
-
-def build_router() -> APIRouter:
+def build_monitoring_router() -> APIRouter:
     from factory import deps as srv
 
-    router = APIRouter(tags=["analytics"])
-    router.add_api_route("/api/analytics", srv.api_analytics, methods=["GET"])
-    router.add_api_route("/api/queue/forge_inbox", srv.queue_forge_inbox, methods=["GET"])
-    router.add_api_route("/api/fsm/work_item", srv.fsm_work_item, methods=["GET"])
-    router.add_api_route("/api/agents", srv.agents_list_compat, methods=["GET"])
-    router.add_api_route("/api/hr", srv.hr_stub, methods=["GET"])
+    router = APIRouter(tags=["monitoring"])
+    router.add_api_route("/api/stats", srv.stats, methods=["GET"])
+    router.add_api_route("/api/workers/status", srv.api_workers_status, methods=["GET"])
+    router.add_api_route("/api/failure-clusters", srv.failure_clusters, methods=["GET"])
+    router.add_api_route("/api/failures", srv.failures, methods=["GET"])
     return router
