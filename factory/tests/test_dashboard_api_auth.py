@@ -71,3 +71,17 @@ def test_post_returns_200_with_valid_token(monkeypatch) -> None:
 
     assert status == 200
     assert body.get("ok") is True
+
+
+def test_options_uses_dashboard_cors_origin_env(monkeypatch) -> None:
+    monkeypatch.setenv("DASHBOARD_CORS_ORIGIN", "http://example.com")
+    server, thread, base = _start_server()
+    try:
+        req = Request(f"{base}/api/visions", method="OPTIONS")
+        with urlopen(req) as resp:  # noqa: S310 - local test server
+            assert resp.status == 204
+            assert resp.headers.get("Access-Control-Allow-Origin") == "http://example.com"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
