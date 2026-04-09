@@ -11,11 +11,13 @@ from uuid import uuid4
 from fastapi import APIRouter, Body, Depends, HTTPException, Path as FastPath, Query, Request
 from fastapi.responses import JSONResponse, Response
 
+from factory.config import get_factory_api_key
 from factory.composition import wire
 from factory.dashboard_api_read import get_work_items_paginated
-from factory.db import gen_id
+from factory.db import DB_PATH, _row, _rows, gen_id, get_connection
 from factory.logging import FactoryLogger
 from factory.models import EventType, Role
+from factory.routers.runs import _serialize_runs
 from factory.schemas import BulkArchiveRequest, WorkItemCreateRequest, WorkItemPatchRequest
 from factory.work_item_api_ops import (
     archive_work_item_subtree,
@@ -29,19 +31,25 @@ from factory.work_items_tree import build_work_items_tree
 _EDITABLE_STATUSES = frozenset({"draft", "planned", "ready_for_judge", "judge_rejected"})
 
 
-def _api_server() -> Any:
-    import factory.api_server as api_server
-
-    return api_server
+def _valid_id(value: str, field: str) -> str:
+    v = value.strip()
+    if not v:
+        raise HTTPException(status_code=400, detail=f"{field} must be a non-empty string")
+    return v
 
 
 async def _require_api_key(request: Request) -> None:
-    api_server = _api_server()
-    await api_server.require_api_key(request)
+    expected = get_factory_api_key()
+    if not expected:
+        raise RuntimeError(
+            "FACTORY_API_KEY is not configured. Set FACTORY_API_KEY before starting the API server."
+        )
+    got = (request.headers.get("X-API-Key") or "").strip()
+    if got != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 def _serialize_export_work_items(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    api_server = _api_server()
     items = conn.execute("SELECT * FROM work_items ORDER BY created_at ASC, id ASC").fetchall()
     out: list[dict[str, Any]] = []
     for wi in items:
@@ -66,9 +74,9 @@ def _serialize_export_work_items(conn: sqlite3.Connection) -> list[dict[str, Any
         ).fetchall()
         out.append(
             {
-                **api_server._row(wi),
-                "runs": api_server._serialize_runs(runs),
-                "events": api_server._rows(events),
+                **_row(wi),
+                "runs": _serialize_runs(runs),
+                "events": _rows(events),
             }
         )
     return out
@@ -119,8 +127,7 @@ def list_work_items(
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
-    api_server = _api_server()
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         return get_work_items_paginated(
             conn,
@@ -136,8 +143,7 @@ def export_work_items(
     format: str = Query("json", pattern="^(json|csv)$"),  # noqa: A002
 ) -> Response:
     """Export all work items with nested runs/events as a downloadable file."""
-    api_server = _api_server()
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         items = _serialize_export_work_items(conn)
     finally:
@@ -160,8 +166,7 @@ def export_work_items(
 
 def work_items_tree_endpoint() -> dict[str, Any]:
     """Полное дерево задач (корни без parent_id). Должен быть объявлен до ``/api/work-items/{wi_id}``."""
-    api_server = _api_server()
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         tree = build_work_items_tree(conn)
         return {"tree": tree}
@@ -174,8 +179,7 @@ def post_work_item_cancel(
     _: None = Depends(_require_api_key),
 ) -> dict[str, Any]:
     """FSM creator_cancelled + каскад по поддереву (post-order)."""
-    api_server = _api_server()
-    factory = wire(api_server._db_path())
+    factory = wire(str(DB_PATH))
     conn: sqlite3.Connection = factory["conn"]
     sm = factory["sm"]
     logger: FactoryLogger = factory["logger"]
@@ -205,8 +209,7 @@ def post_work_item_archive(
     _: None = Depends(_require_api_key),
 ) -> dict[str, Any]:
     """FSM archive_sweep для done и всех done-потомков."""
-    api_server = _api_server()
-    factory = wire(api_server._db_path())
+    factory = wire(str(DB_PATH))
     conn = factory["conn"]
     sm = factory["sm"]
     logger: FactoryLogger = factory["logger"]
@@ -241,8 +244,7 @@ def patch_work_item(
     if title is None and description is None:
         raise HTTPException(status_code=400, detail="expected title and/or description")
 
-    api_server = _api_server()
-    conn = api_server._open_rw()
+    conn = get_connection(DB_PATH)
     logger = FactoryLogger(conn)
     try:
         row = conn.execute("SELECT * FROM work_items WHERE id = ?", (wi_id,)).fetchone()
@@ -283,7 +285,7 @@ def patch_work_item(
         )
         conn.commit()
         upd = conn.execute("SELECT * FROM work_items WHERE id = ?", (wi_id,)).fetchone()
-        return {"work_item": api_server._row(upd)}
+        return {"work_item": _row(upd)}
     finally:
         conn.close()
 
@@ -292,8 +294,7 @@ def delete_work_item_endpoint(
     wi_id: str = FastPath(..., min_length=1, max_length=128),
     _: None = Depends(_require_api_key),
 ) -> dict[str, Any]:
-    api_server = _api_server()
-    conn = api_server._open_rw()
+    conn = get_connection(DB_PATH)
     logger = FactoryLogger(conn)
     try:
         n, err = delete_work_item_subtree(conn, logger, wi_id)
@@ -312,17 +313,16 @@ def post_bulk_archive(
     _: None = Depends(_require_api_key),
 ) -> dict[str, Any]:
     """Архивирует несколько корней (обычно Vision в done)."""
-    api_server = _api_server()
     ids = body.ids
     filt = (body.filter or "").strip()
-    factory = wire(api_server._db_path())
+    factory = wire(str(DB_PATH))
     conn = factory["conn"]
     sm = factory["sm"]
     try:
         if filt == "all_done_visions":
             target_ids = list_done_vision_roots_ready_to_archive(conn)
         elif isinstance(ids, list) and ids:
-            target_ids = [api_server._valid_id(str(x), "ids[]") for x in ids]
+            target_ids = [_valid_id(str(x), "ids[]") for x in ids]
         else:
             raise HTTPException(
                 status_code=400,
@@ -376,8 +376,7 @@ def post_tasks_forge_run_compat(
 
 
 def get_work_item(wi_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
-    api_server = _api_server()
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         wi = conn.execute("SELECT * FROM work_items WHERE id = ?", (wi_id,)).fetchone()
         if not wi:
@@ -415,23 +414,22 @@ def get_work_item(wi_id: str = FastPath(..., min_length=1, max_length=128)) -> d
             (wi_id,),
         ).fetchone()
         wi_out = {
-            **api_server._row(wi),
-            "files": api_server._rows(files),
+            **_row(wi),
+            "files": _rows(files),
             "forge_attempts": int(forge_attempts),
             "review_rejections": int(review_rejections),
             "judge_rejections": int(judge_rejections),
         }
         if qlease:
-            wi_out["queue_lease"] = api_server._row(qlease)
-        return {"work_item": wi_out, "children": api_server._rows(ch)}
+            wi_out["queue_lease"] = _row(qlease)
+        return {"work_item": wi_out, "children": _rows(ch)}
     finally:
         conn.close()
 
 
 def get_task_bundle(wi_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
     """Совместимость с factory-os.html (openDetail)."""
-    api_server = _api_server()
-    conn = api_server._open_ro()
+    conn = get_connection(DB_PATH, read_only=True)
     try:
         wi = conn.execute("SELECT * FROM work_items WHERE id = ?", (wi_id,)).fetchone()
         if not wi:
@@ -465,11 +463,11 @@ def get_task_bundle(wi_id: str = FastPath(..., min_length=1, max_length=128)) ->
         ).fetchall()
         return {
             "work_item": {
-                **api_server._row(wi),
-                "files": api_server._rows(files),
-                "event_log": api_server._rows(ev),
+                **_row(wi),
+                "files": _rows(files),
+                "event_log": _rows(ev),
             },
-            "runs": api_server._serialize_runs(runs),
+            "runs": _serialize_runs(runs),
             "comments": [],
         }
     finally:
@@ -480,9 +478,8 @@ def create_work_item_legacy(
     body: WorkItemCreateRequest | dict[str, Any] = Body(...),
     _: None = Depends(_require_api_key),
 ) -> dict[str, Any]:
-    api_server = _api_server()
     payload = body if isinstance(body, WorkItemCreateRequest) else WorkItemCreateRequest.model_validate(body)
-    conn = api_server._open_rw()
+    conn = get_connection(DB_PATH)
     try:
         idempotency_key = payload.idempotency_key.strip() if payload.idempotency_key else None
         if idempotency_key:
@@ -536,7 +533,7 @@ def create_work_item_legacy(
         )
         conn.commit()
         wi = conn.execute("SELECT * FROM work_items WHERE id = ?", (wi_id,)).fetchone()
-        return {"ok": True, "work_item": api_server._row(wi)}
+        return {"ok": True, "work_item": _row(wi)}
     except sqlite3.IntegrityError:
         if idempotency_key:
             existing = conn.execute(
