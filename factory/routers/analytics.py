@@ -6,8 +6,6 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from factory.analytics_api import compute_analytics
-from factory.dashboard_api import _fsm_stub
-from factory.dashboard_live_read import api_forge_inbox_simple
 from factory.workers_status import workers_status_payload
 
 
@@ -106,36 +104,6 @@ def api_workers_status() -> dict[str, Any]:
         conn.close()
 
 
-def queue_forge_inbox() -> dict[str, Any]:
-    """Совместимость с factory-os.html (тот же контракт, что legacy ``dashboard_api``)."""
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
-    try:
-        return api_forge_inbox_simple(conn)
-    finally:
-        conn.close()
-
-
-def fsm_work_item() -> dict[str, Any]:
-    import factory.api_server as api_server
-
-    conn = api_server._open_ro()
-    try:
-        return _fsm_stub(conn)
-    finally:
-        conn.close()
-
-
-def failure_clusters() -> dict[str, Any]:
-    return {"clusters": [], "items": []}
-
-
-def failures() -> dict[str, Any]:
-    """Alias for /api/failure-clusters for frontend compatibility."""
-    return {"clusters": [], "items": []}
-
-
 def build_router() -> APIRouter:
     from factory import deps as srv
 
@@ -143,8 +111,4 @@ def build_router() -> APIRouter:
     router.add_api_route("/api/analytics", srv.api_analytics, methods=["GET"])
     router.add_api_route("/api/stats", srv.stats, methods=["GET"])
     router.add_api_route("/api/workers/status", srv.api_workers_status, methods=["GET"])
-    router.add_api_route("/api/queue/forge_inbox", srv.queue_forge_inbox, methods=["GET"])
-    router.add_api_route("/api/fsm/work_item", srv.fsm_work_item, methods=["GET"])
-    router.add_api_route("/api/failure-clusters", srv.failure_clusters, methods=["GET"])
-    router.add_api_route("/api/failures", srv.failures, methods=["GET"])
     return router
