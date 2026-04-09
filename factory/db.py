@@ -765,6 +765,16 @@ def get_connection(db_path: Path | str = DB_PATH, *, read_only: bool = False) ->
     return conn
 
 
+def _db_path() -> str:
+    """Compatibility helper for legacy imports in API server module."""
+    return str(DB_PATH)
+
+
+def _open_ro() -> sqlite3.Connection:
+    """Compatibility helper returning read-only DB connection."""
+    return get_connection(DB_PATH, read_only=True)
+
+
 @contextmanager
 def transaction(conn: sqlite3.Connection) -> Generator[sqlite3.Connection, None, None]:
     try:
