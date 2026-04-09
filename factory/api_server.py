@@ -12,11 +12,6 @@ Read-only HTTP API для дашборда (SQLite WAL, mode=ro).
 from __future__ import annotations
 
 import argparse
-import asyncio
-import csv
-from contextlib import asynccontextmanager
-import io
-import json
 import logging
 import os
 import sqlite3
@@ -24,53 +19,23 @@ import sys
 import threading
 import time
 import traceback
-from uuid import uuid4
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable, Union
+from typing import Any, AsyncIterator, Awaitable, Callable
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Path as FastPath, Query, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
-from pydantic import ValidationError
+from fastapi.responses import JSONResponse, Response
 
-from .config import (
-    API_HOST,
-    API_PORT,
-    ORCHESTRATOR_TICK_INTERVAL_SECONDS,
-    AccountManager,
-    load_dotenv,
-    get_factory_api_key,
-    resolve_db_path,
-)
 from .composition import wire
-from .dashboard_api_read import get_work_items_paginated
-from .analytics_api import compute_analytics
-from .dashboard_unified_journal import JournalFilters, api_journal_query
-from .workers_status import workers_status_payload
-from .work_items_tree import subtree_for_root_id
-from .db import _db_path, _open_ro, _open_rw, _row, _rows, ensure_schema, gen_id, get_connection, resolve_effective_run_id
+from .config import (API_HOST, API_PORT, ORCHESTRATOR_TICK_INTERVAL_SECONDS,
+                     get_factory_api_key, load_dotenv)
+from .db import _db_path, _open_ro, get_connection
 from .logging import FactoryLogger
-from .models import EventType, Role
-from .work_items import WorkItemOps
-from .work_item_api_ops import (
-    archive_work_item_subtree,
-    cancel_work_item_subtree,
-    delete_work_item_subtree,
-    list_done_vision_roots_ready_to_archive,
-)
-from .qwen_cli_runner import run_qwen_cli
-from .chat_service import ChatService
 from .logging_config import configure_logging
-from .schemas import (
-    BulkArchiveRequest,
-    ChatCreateRequest,
-    QwenFixRequest,
-    RunCreateRequest,
-    WorkItemCreateRequest,
-    WorkItemPatchRequest,
-)
+from .models import EventType
+from .workers_status import workers_status_payload
 
 load_dotenv()
 
@@ -565,13 +530,13 @@ _EDITABLE_STATUSES = frozenset(
 
 
 def _include_domain_routers() -> None:
+    from .routers.admin_health import build_router as build_admin_health_router
     from .routers.agents import build_agents_router
     from .routers.analytics import build_router as build_analytics_router
-    from .routers.admin_health import build_router as build_admin_health_router
     from .routers.chat import build_router as build_chat_router
+    from .routers.improvements import build_router as build_improvements_router
     from .routers.journal import build_router as build_journal_router
     from .routers.orchestrator import build_router as build_orchestrator_router
-    from .routers.improvements import build_router as build_improvements_router
     from .routers.qwen import build_router as build_qwen_router
     from .routers.runs import build_router as build_runs_router
     from .routers.visions import build_router as build_visions_router
