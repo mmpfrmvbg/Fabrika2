@@ -50,7 +50,7 @@ from .analytics_api import compute_analytics
 from .dashboard_unified_journal import JournalFilters, api_journal_query
 from .workers_status import workers_status_payload
 from .work_items_tree import subtree_for_root_id
-from .db import ensure_schema, gen_id, get_connection, resolve_effective_run_id
+from .db import _row, _rows, ensure_schema, gen_id, get_connection, resolve_effective_run_id
 from .logging import FactoryLogger
 from .models import EventType, Role
 from .work_items import WorkItemOps
@@ -525,12 +525,8 @@ def _open_rw() -> sqlite3.Connection:
     return get_connection(path)
 
 
-def _row(d: sqlite3.Row) -> dict[str, Any]:
-    return {k: d[k] for k in d.keys()}
 
 
-def _rows(rs: list[sqlite3.Row]) -> list[dict[str, Any]]:
-    return [_row(r) for r in rs]
 
 
 
