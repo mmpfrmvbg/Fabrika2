@@ -614,74 +614,8 @@ def journal(
         conn.close()
 
 
-def stats() -> dict[str, Any]:
-    conn = _open_ro()
-    try:
-        by_kind = {r["kind"]: r["c"] for r in conn.execute("SELECT kind, COUNT(*) AS c FROM work_items GROUP BY kind")}
-        by_status = {
-            r["status"]: r["c"] for r in conn.execute("SELECT status, COUNT(*) AS c FROM work_items GROUP BY status")
-        }
-        runs_total = conn.execute("SELECT COUNT(*) AS c FROM runs").fetchone()["c"]
-        last_ev = conn.execute("SELECT MAX(event_time) AS t FROM event_log").fetchone()["t"]
-        wi_total = conn.execute("SELECT COUNT(*) AS c FROM work_items").fetchone()["c"]
-        total_visions = conn.execute(
-            "SELECT COUNT(*) AS c FROM work_items WHERE kind = 'vision'"
-        ).fetchone()["c"]
-        total_atoms = conn.execute(
-            "SELECT COUNT(*) AS c FROM work_items WHERE kind = 'atom'"
-        ).fetchone()["c"]
-        total_forge_runs = conn.execute(
-            "SELECT COUNT(*) AS c FROM runs WHERE role = 'forge'"
-        ).fetchone()["c"]
-        last_forge = conn.execute(
-            "SELECT MAX(finished_at) AS t FROM runs WHERE role = 'forge' AND finished_at IS NOT NULL"
-        ).fetchone()["t"]
-        improvements_proposed = 0
-        improvements_stats: dict[str, int] = {}
-        try:
-            rows = conn.execute(
-                """
-                SELECT status, COUNT(*) AS c FROM improvement_candidates GROUP BY status
-                """
-            ).fetchall()
-            improvements_stats = {r["status"]: int(r["c"]) for r in rows}
-            improvements_proposed = int(improvements_stats.get("proposed", 0))
-        except sqlite3.OperationalError as e:
-            _LOG.debug("improvement_candidates table unavailable in stats: %s", e)
-        orch_hb = _orchestrator_heartbeat_from_conn(conn)
-        try:
-            wst = workers_status_payload(conn)
-        except sqlite3.OperationalError as e:
-            _LOG.debug("workers_status_payload fallback due to sqlite operational error: %s", e)
-            wst = {"active": 0, "workers": [], "leases_total": 0}
-        return {
-            "active_workers": int(wst.get("active") or 0),
-            "worker_leases_total": int(wst.get("leases_total") or 0),
-            "workers_snapshot": wst.get("workers") or [],
-            "work_items_total": wi_total,
-            "by_kind": by_kind,
-            "by_status": by_status,
-            "runs_total": runs_total,
-            "last_event_time": last_ev,
-            "total_visions": int(total_visions),
-            "total_atoms": int(total_atoms),
-            "total_forge_runs": int(total_forge_runs),
-            "last_forge_run_at": last_forge,
-            "improvements_proposed": improvements_proposed,
-            "improvements_stats": improvements_stats,
-            **orch_hb,
-        }
-    finally:
-        conn.close()
 
 
-def api_workers_status() -> dict[str, Any]:
-    """Активные lease в очередях (внешние worker-процессы и оркестратор)."""
-    conn = _open_ro()
-    try:
-        return workers_status_payload(conn)
-    finally:
-        pass
 
 
 
@@ -702,13 +636,8 @@ def agents_list_compat() -> dict[str, Any]:
         conn.close()
 
 
-def failure_clusters() -> dict[str, Any]:
-    return {"clusters": [], "items": []}
 
 
-def failures() -> dict[str, Any]:
-    """Alias for /api/failure-clusters for frontend compatibility."""
-    return {"clusters": [], "items": []}
 
 
 def hr_stub() -> dict[str, Any]:
@@ -734,6 +663,7 @@ def _include_domain_routers() -> None:
     app.include_router(build_runs_router())
     app.include_router(build_journal_router())
     app.include_router(build_judgements_router())
+    app.include_router(build_monitoring_router())
     app.include_router(build_orchestrator_router())
     app.include_router(build_improvements_router())
     app.include_router(build_visions_router())
