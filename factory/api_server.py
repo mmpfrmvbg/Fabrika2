@@ -30,7 +30,7 @@ from fastapi.responses import JSONResponse, Response
 from .composition import wire
 from .config import (API_HOST, API_PORT, ORCHESTRATOR_TICK_INTERVAL_SECONDS,
                      get_factory_api_key, load_dotenv)
-from .db import _db_path, _open_ro, get_connection
+from .db import DB_PATH, _db_path, get_connection
 from .logging import FactoryLogger
 from .logging_config import configure_logging
 from .middleware import (_RATE_LIMITS_PER_MINUTE, _RATE_LIMIT_STATE, _client_ip,
@@ -158,7 +158,7 @@ def api_health() -> dict[str, Any]:
         "orchestrator_heartbeat_state": "none",
     }
     try:
-        conn = _open_ro()
+        conn = get_connection(DB_PATH, read_only=True)
         try:
             conn.execute("SELECT 1").fetchone()
             db_connected = True
