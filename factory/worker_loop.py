@@ -43,22 +43,24 @@ def factory_has_pending_dispatch(conn) -> bool:
     return r is not None
 
 
-def cleanup_stale_locks(conn) -> int:
+def cleanup_stale_locks(conn, threshold_seconds: int = 300) -> int:
     """
     Очищает зависшие блокировки файлов (истёкшие более 5 минут назад).
     
     Возвращает количество освобождённых блокировок.
     """
-    # Освобождаем блокировки, у которых expires_at истёк более 5 минут назад
+    # Освобождаем блокировки, у которых expires_at истёк больше порога ожидания
     # Используем replace для корректного сравнения ISO дат с 'T'
+    stale_modifier = f"-{max(0, int(threshold_seconds))} seconds"
     result = conn.execute(
         """
         UPDATE file_locks
         SET released_at = strftime('%Y-%m-%dT%H:%M:%f','now'),
             lock_reason = lock_reason || ' [auto-cleanup by worker_loop]'
         WHERE released_at IS NULL
-          AND replace(expires_at, 'T', ' ') < datetime('now', '-5 minutes')
-        """
+          AND replace(expires_at, 'T', ' ') < datetime('now', ?)
+        """,
+        (stale_modifier,),
     )
     # Снимаем lease с задач, у которых все блокировки освобождены
     conn.execute(
