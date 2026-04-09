@@ -22,8 +22,6 @@ _API_ENDPOINT_NAMES: tuple[str, ...] = (
     "orchestrator_tick",
     "chat_qwen_create",
     "chat_qwen_stream",
-    "list_events",
-    "stream_events",
     "api_analytics",
     "stats",
     "api_workers_status",
@@ -58,12 +56,6 @@ _API_ENDPOINT_NAMES: tuple[str, ...] = (
     "get_work_item",
     "get_task_bundle",
     "create_work_item_legacy",
-    "create_run",
-    "runs_for_work_item",
-    "list_runs",
-    "get_run_detail",
-    "get_run_steps",
-    "get_effective_run_id",
 )
 
 
@@ -100,6 +92,19 @@ def __getattr__(name: str) -> Callable[..., Any]:
         from .routers import visions
 
         return getattr(visions, name)
+    if name in {
+        "create_run",
+        "runs_for_work_item",
+        "list_runs",
+        "get_run_detail",
+        "get_run_steps",
+        "get_effective_run_id",
+        "list_events",
+        "stream_events",
+    }:
+        from .routers import runs
+
+        return getattr(runs, name)
     if name in _API_ENDPOINT_NAMES:
         return getattr(_api_server(), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
