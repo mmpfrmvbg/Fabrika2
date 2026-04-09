@@ -14,14 +14,6 @@ from .db import ensure_schema, get_connection, init_db
 _API_ENDPOINT_NAMES: tuple[str, ...] = (
     "health",
     "api_health",
-    "api_metrics",
-    "orchestrator_status",
-    "orchestrator_start",
-    "orchestrator_stop",
-    "orchestrator_health",
-    "orchestrator_tick",
-    "chat_qwen_create",
-    "chat_qwen_stream",
     "list_events",
     "stream_events",
     "api_analytics",
@@ -44,7 +36,6 @@ _API_ENDPOINT_NAMES: tuple[str, ...] = (
     "failure_clusters",
     "failures",
     "hr_stub",
-    "qwen_fix_endpoint",
     "list_work_items",
     "export_work_items",
     "work_items_tree_endpoint",
@@ -66,6 +57,18 @@ _API_ENDPOINT_NAMES: tuple[str, ...] = (
     "get_effective_run_id",
 )
 
+_ROUTER_ENDPOINT_NAMES: tuple[str, ...] = (
+    "api_metrics",
+    "orchestrator_status",
+    "orchestrator_start",
+    "orchestrator_stop",
+    "orchestrator_health",
+    "orchestrator_tick",
+    "chat_qwen_create",
+    "chat_qwen_stream",
+    "qwen_fix_endpoint",
+)
+
 
 def _api_server() -> Any:
     from . import api_server
@@ -82,6 +85,25 @@ def __getattr__(name: str) -> Callable[..., Any]:
         from .routers import journal
 
         return getattr(journal, name)
+    if name in {
+        "api_metrics",
+        "orchestrator_status",
+        "orchestrator_start",
+        "orchestrator_stop",
+        "orchestrator_health",
+        "orchestrator_tick",
+    }:
+        from .routers import orchestrator
+
+        return getattr(orchestrator, name)
+    if name in {"chat_qwen_create", "chat_qwen_stream"}:
+        from .routers import chat
+
+        return getattr(chat, name)
+    if name in {"qwen_fix_endpoint"}:
+        from .routers import qwen
+
+        return getattr(qwen, name)
     if name in {
         "api_analytics",
         "stats",
@@ -110,4 +132,5 @@ __all__ = [
     "get_connection",
     "init_db",
     *_API_ENDPOINT_NAMES,
+    *_ROUTER_ENDPOINT_NAMES,
 ]

@@ -66,7 +66,9 @@ def stats() -> dict[str, Any]:
             improvements_proposed = int(improvements_stats.get("proposed", 0))
         except sqlite3.OperationalError as e:
             api_server._LOG.debug("improvement_candidates table unavailable in stats: %s", e)
-        orch_hb = api_server._orchestrator_heartbeat_from_conn(conn)
+        from factory.routers.orchestrator import _orchestrator_heartbeat_from_conn
+
+        orch_hb = _orchestrator_heartbeat_from_conn(conn)
         try:
             wst = workers_status_payload(conn)
         except sqlite3.OperationalError as e:
