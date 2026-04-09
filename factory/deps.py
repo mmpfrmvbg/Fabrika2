@@ -6,6 +6,7 @@ Routers should import endpoint callables and shared DB helpers from here.
 from __future__ import annotations
 
 from collections.abc import Callable
+from importlib import import_module
 from typing import Any
 
 from .db import ensure_schema, get_connection, init_db
@@ -52,39 +53,47 @@ def _api_server() -> Any:
     return api_server
 
 
+_ROUTER_BY_ENDPOINT: dict[str, str] = {
+    "health": "api_server",
+    "api_health": "api_server",
+    "api_metrics": "api_server",
+    "orchestrator_status": "api_server",
+    "orchestrator_start": "api_server",
+    "orchestrator_stop": "api_server",
+    "orchestrator_health": "api_server",
+    "orchestrator_tick": "api_server",
+    "chat_qwen_create": "api_server",
+    "chat_qwen_stream": "api_server",
+    "api_analytics": "analytics",
+    "stats": "analytics",
+    "api_workers_status": "analytics",
+    "journal": "journal",
+    "judgements": "journal",
+    "judge_verdicts": "journal",
+    "tree": "agents",
+    "list_improvements": "improvements",
+    "approve_improvement": "improvements",
+    "reject_improvement": "improvements",
+    "convert_improvement": "improvements",
+    "visions": "visions",
+    "create_vision": "visions",
+    "decompose_vision_endpoint": "visions",
+    "queue_forge_inbox": "journal",
+    "fsm_work_item": "journal",
+    "agents_list_compat": "agents",
+    "failure_clusters": "journal",
+    "failures": "journal",
+    "hr_stub": "agents",
+    "qwen_fix_endpoint": "api_server",
+}
+
+
 def __getattr__(name: str) -> Callable[..., Any]:
-    if name in {"list_improvements", "approve_improvement", "reject_improvement", "convert_improvement"}:
-        from .routers import improvements
-
-        return getattr(improvements, name)
-    if name in {
-        "journal",
-        "judgements",
-        "judge_verdicts",
-        "queue_forge_inbox",
-        "fsm_work_item",
-        "failure_clusters",
-        "failures",
-    }:
-        from .routers import journal
-
-        return getattr(journal, name)
-    if name in {"tree", "agents_list_compat", "hr_stub"}:
-        from .routers import agents
-
-        return getattr(agents, name)
-    if name in {
-        "api_analytics",
-        "stats",
-        "api_workers_status",
-    }:
-        from .routers import analytics
-
-        return getattr(analytics, name)
-    if name in {"visions", "create_vision", "decompose_vision_endpoint"}:
-        from .routers import visions
-
-        return getattr(visions, name)
+    module_name = _ROUTER_BY_ENDPOINT.get(name)
+    if module_name is not None:
+        module_path = ".api_server" if module_name == "api_server" else f".routers.{module_name}"
+        module = import_module(module_path, package=__package__)
+        return getattr(module, name)
     if name in {
         "create_run",
         "runs_for_work_item",
@@ -99,24 +108,6 @@ def __getattr__(name: str) -> Callable[..., Any]:
 
         return getattr(runs, name)
     if name in _API_ENDPOINT_NAMES:
-        if name in {
-            "list_work_items",
-            "export_work_items",
-            "work_items_tree_endpoint",
-            "post_work_item_cancel",
-            "post_work_item_archive",
-            "patch_work_item",
-            "delete_work_item_endpoint",
-            "post_bulk_archive",
-            "post_work_item_run",
-            "post_tasks_forge_run_compat",
-            "get_work_item",
-            "get_task_bundle",
-            "create_work_item_legacy",
-        }:
-            from .routers import work_items
-
-            return getattr(work_items, name)
         return getattr(_api_server(), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
