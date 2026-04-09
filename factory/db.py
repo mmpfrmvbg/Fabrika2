@@ -825,3 +825,9 @@ def init_db(db_path: Path = DB_PATH) -> sqlite3.Connection:
     conn = get_connection(db_path)
     _seed_static_data(conn)
     return conn
+
+def _row(d: sqlite3.Row):
+    return {k: d[k] for k in d.keys()}
+
+def _rows(rs):
+    return [_row(r) for r in rs]
