@@ -12,6 +12,7 @@ Read-only HTTP API для дашборда (SQLite WAL, mode=ro).
 from __future__ import annotations
 
 import argparse
+import asyncio
 import csv
 from contextlib import asynccontextmanager
 import io
@@ -27,7 +28,7 @@ from uuid import uuid4
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, Callable
+from typing import Any, AsyncIterator, Awaitable, Callable, Union
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Path as FastPath, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -49,7 +50,7 @@ from .analytics_api import compute_analytics
 from .dashboard_unified_journal import JournalFilters, api_journal_query
 from .workers_status import workers_status_payload
 from .work_items_tree import build_work_items_tree, subtree_for_root_id
-from .db import ensure_schema, gen_id, get_connection
+from .db import ensure_schema, gen_id, get_connection, resolve_effective_run_id
 from .logging import FactoryLogger
 from .models import EventType, Role
 from .work_items import WorkItemOps
@@ -66,6 +67,7 @@ from .schemas import (
     BulkArchiveRequest,
     ChatCreateRequest,
     QwenFixRequest,
+    RunCreateRequest,
     WorkItemCreateRequest,
     WorkItemPatchRequest,
 )
@@ -358,6 +360,8 @@ def api_health() -> dict[str, Any]:
             conn.execute("SELECT 1").fetchone()
             db_connected = True
             worker_status = workers_status_payload(conn)
+            from .routers.orchestrator import _orchestrator_heartbeat_from_conn
+
             orchestrator_heartbeat = _orchestrator_heartbeat_from_conn(conn)
         finally:
             conn.close()
@@ -529,9 +533,11 @@ def _rows(rs: list[sqlite3.Row]) -> list[dict[str, Any]]:
     return [_row(r) for r in rs]
 
 
-def _serialize_export_work_items(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    from .routers.runs import _serialize_run_row
 
+
+
+
+def _serialize_export_work_items(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     work_item_rows = conn.execute(
         "SELECT * FROM work_items ORDER BY created_at ASC, id ASC"
     ).fetchall()
@@ -584,181 +590,6 @@ def _work_items_export_csv(items: list[dict[str, Any]]) -> str:
     return out.getvalue()
 
 
-def _queue_depths_from_conn(conn: sqlite3.Connection) -> dict[str, int]:
-    rows = conn.execute(
-        """
-        SELECT queue_name, COUNT(*) AS c
-        FROM work_item_queue
-        WHERE queue_name IN ('forge_inbox','review_inbox','judge_inbox')
-        GROUP BY queue_name
-        """
-    ).fetchall()
-    out = {r["queue_name"]: int(r["c"]) for r in rows}
-    for k in ("forge_inbox", "review_inbox", "judge_inbox"):
-        out.setdefault(k, 0)
-    return out
-
-
-def _orchestrator_heartbeat_from_conn(conn: sqlite3.Connection) -> dict[str, Any]:
-    """Последнее событие с actor_role orchestrator (для UI heartbeat)."""
-    from .routers.runs import _parse_event_time_iso
-
-    row = conn.execute(
-        """
-        SELECT MAX(event_time) AS t FROM event_log
-        WHERE LOWER(COALESCE(actor_role, '')) = ?
-        """,
-        (Role.ORCHESTRATOR.value,),
-    ).fetchone()
-    ts = row["t"] if row else None
-    dt = _parse_event_time_iso(ts) if ts else None
-    if not dt:
-        return {
-            "orchestrator_last_event_time": None,
-            "orchestrator_seconds_since_last_event": None,
-            "orchestrator_heartbeat_state": "none",
-        }
-    now = datetime.now(timezone.utc)
-    sec = max(0.0, (now - dt).total_seconds())
-    if sec < 30.0:
-        state = "active"
-    elif sec < 60.0:
-        state = "warn"
-    else:
-        state = "stale"
-    return {
-        "orchestrator_last_event_time": ts,
-        "orchestrator_seconds_since_last_event": sec,
-        "orchestrator_heartbeat_state": state,
-    }
-
-
-def api_metrics() -> dict[str, Any]:
-    conn = _open_ro()
-    try:
-        work_items_total = int(conn.execute("SELECT COUNT(*) AS c FROM work_items").fetchone()["c"])
-        work_items_by_status = {
-            r["status"]: int(r["c"])
-            for r in conn.execute(
-                "SELECT status, COUNT(*) AS c FROM work_items GROUP BY status"
-            ).fetchall()
-        }
-        runs_total = int(conn.execute("SELECT COUNT(*) AS c FROM runs").fetchone()["c"])
-        runs_last_24h = int(
-            conn.execute(
-                """
-                SELECT COUNT(*) AS c
-                FROM runs
-                WHERE started_at IS NOT NULL
-                  AND julianday(started_at) >= julianday('now', '-1 day')
-                """
-            ).fetchone()["c"]
-        )
-        failed_runs_last_24h = int(
-            conn.execute(
-                """
-                SELECT COUNT(*) AS c
-                FROM runs
-                WHERE started_at IS NOT NULL
-                  AND julianday(started_at) >= julianday('now', '-1 day')
-                  AND LOWER(COALESCE(status, '')) IN ('failed', 'error')
-                """
-            ).fetchone()["c"]
-        )
-        avg_run_duration_seconds = float(
-            conn.execute(
-                """
-                SELECT COALESCE(AVG((julianday(finished_at) - julianday(started_at)) * 86400.0), 0.0) AS s
-                FROM runs
-                WHERE started_at IS NOT NULL
-                  AND finished_at IS NOT NULL
-                  AND julianday(finished_at) >= julianday(started_at)
-                """
-            ).fetchone()["s"]
-            or 0.0
-        )
-        orchestrator_running = bool(
-            conn.execute(
-                """
-                SELECT EXISTS(
-                    SELECT 1
-                    FROM event_log
-                    WHERE LOWER(COALESCE(actor_role, '')) = 'orchestrator'
-                      AND julianday(event_time) >= julianday('now', ?)
-                ) AS is_running
-                """,
-                (f"-{2 * _tick_interval_seconds()} seconds",),
-            ).fetchone()["is_running"]
-        )
-        return {
-            "work_items_total": work_items_total,
-            "work_items_by_status": work_items_by_status,
-            "runs_total": runs_total,
-            "runs_last_24h": runs_last_24h,
-            "failed_runs_last_24h": failed_runs_last_24h,
-            "avg_run_duration_seconds": avg_run_duration_seconds,
-            "orchestrator_running": orchestrator_running,
-        }
-    finally:
-        conn.close()
-
-
-def orchestrator_status() -> dict[str, Any]:
-    conn = _open_ro()
-    try:
-        qd = _queue_depths_from_conn(conn)
-    finally:
-        conn.close()
-    return {
-        "running": bool(_orch_thread.running),
-        "last_tick": _orch_thread.last_tick,
-        "ticks_total": int(_orch_thread.ticks_total),
-        "items_processed": int(_orch_thread.items_processed_total),
-        "last_tick_processed": dict(_orch_thread.last_tick_processed or {}),
-        "queue_depths": qd,
-    }
-
-
-def orchestrator_start(_: None = Depends(require_api_key)) -> dict[str, Any]:
-    _orch_thread.start()
-    return orchestrator_status()
-
-
-def orchestrator_stop(_: None = Depends(require_api_key)) -> dict[str, Any]:
-    _orch_thread.stop()
-    return orchestrator_status()
-
-
-def orchestrator_health() -> dict[str, Any]:
-    """Heartbeat по event_log (actor_role=orchestrator), не путать с /api/orchestrator/status (поток tick)."""
-    conn = _open_ro()
-    try:
-        h = _orchestrator_heartbeat_from_conn(conn)
-        return {"ok": True, **h}
-    finally:
-        conn.close()
-
-
-def orchestrator_tick(_: None = Depends(require_api_key)) -> dict[str, Any]:
-    processed = _orch_thread.tick_once()
-    if processed:
-        _orch_thread.items_processed_total += sum(processed.values())
-    conn = _open_ro()
-    try:
-        qd = _queue_depths_from_conn(conn)
-    finally:
-        conn.close()
-    return {
-        "ok": True,
-        "processed": processed,
-        "queue_depths": qd,
-        "status": {
-            "running": bool(_orch_thread.running),
-            "last_tick": _orch_thread.last_tick,
-            "ticks_total": int(_orch_thread.ticks_total),
-            "items_processed": int(_orch_thread.items_processed_total),
-        },
-    }
 
 
 def list_work_items(
@@ -1091,8 +922,6 @@ def get_work_item(wi_id: str = FastPath(..., min_length=1, max_length=128)) -> d
 
 def get_task_bundle(wi_id: str = FastPath(..., min_length=1, max_length=128)) -> dict[str, Any]:
     """Совместимость с factory-os.html (openDetail)."""
-    from .routers.runs import _serialize_runs
-
     conn = _open_ro()
     try:
         wi = conn.execute("SELECT * FROM work_items WHERE id = ?", (wi_id,)).fetchone()
@@ -1210,21 +1039,21 @@ def create_work_item_legacy(
         conn.close()
 
 
-def api_analytics(
-    period: str = Query("24h", description="24h | 7d | 30d | all"),
-) -> dict[str, Any]:
-    """Метрики фабрики за период (read-only)."""
-    p = (period or "24h").strip().lower()
-    if p not in ("24h", "7d", "30d", "all"):
-        raise HTTPException(
-            status_code=400,
-            detail="period must be one of: 24h, 7d, 30d, all",
-        )
-    conn = _open_ro()
-    try:
-        return compute_analytics(conn, p)
-    finally:
-        conn.close()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def journal(
@@ -1317,100 +1146,8 @@ def api_workers_status() -> dict[str, Any]:
     try:
         return workers_status_payload(conn)
     finally:
-        conn.close()
+        pass
 
-
-def _load_judgements_items(
-    conn: sqlite3.Connection, work_item_id: str | None, limit: int
-) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    qjv = """
-        SELECT id, work_item_id, verdict, payload_json, failed_guards_json,
-               rejection_reason_code, created_at, run_id
-        FROM judge_verdicts
-        WHERE 1=1
-    """
-    pjv: list[Any] = []
-    if work_item_id:
-        qjv += " AND work_item_id = ?"
-        pjv.append(work_item_id)
-    qjv += " ORDER BY created_at DESC LIMIT ?"
-    pjv.append(limit)
-    try:
-        jv = conn.execute(qjv, pjv).fetchall()
-    except sqlite3.OperationalError as e:
-        _LOG.debug("judge_verdicts table unavailable while loading judgements: %s", e)
-        jv = []
-    for r in jv:
-        issues: Any = []
-        p: dict[str, Any] = {}
-        try:
-            p = json.loads(r["payload_json"] or "{}")
-            if isinstance(p, dict):
-                issues = p.get("failed_guards") or p.get("issues") or []
-            else:
-                issues = []
-        except json.JSONDecodeError:
-            issues = []
-        try:
-            if r["failed_guards_json"]:
-                issues = json.loads(r["failed_guards_json"])
-        except (json.JSONDecodeError, TypeError) as e:
-            _LOG.debug("Failed to parse failed_guards_json for verdict %s: %s", r["id"], e)
-        used_el = None
-        if isinstance(p, dict):
-            used_el = p.get("used_event_log")
-        items.append(
-            {
-                "id": r["id"],
-                "work_item_id": r["work_item_id"],
-                "role": "judge",
-                "verdict": r["verdict"],
-                "reason_code": r["rejection_reason_code"] or "",
-                "issues": issues if isinstance(issues, list) else [],
-                "created_at": r["created_at"],
-                "run_id": r["run_id"],
-                "summary": (r["verdict"] or "")[:200],
-                "used_event_log": used_el if isinstance(used_el, bool) else False,
-            }
-        )
-    qrr = """
-        SELECT id, work_item_id, verdict, issues_json, payload_json, created_at, reviewer_run_id
-        FROM review_results
-        WHERE 1=1
-    """
-    prr: list[Any] = []
-    if work_item_id:
-        qrr += " AND work_item_id = ?"
-        prr.append(work_item_id)
-    qrr += " ORDER BY created_at DESC LIMIT ?"
-    prr.append(limit)
-    try:
-        rr = conn.execute(qrr, prr).fetchall()
-    except sqlite3.OperationalError as e:
-        _LOG.debug("review_results table unavailable while loading judgements: %s", e)
-        rr = []
-    for r in rr:
-        issues = []
-        try:
-            issues = json.loads(r["issues_json"] or "[]")
-        except json.JSONDecodeError:
-            issues = []
-        items.append(
-            {
-                "id": r["id"],
-                "work_item_id": r["work_item_id"],
-                "role": "reviewer",
-                "verdict": r["verdict"],
-                "reason_code": "",
-                "issues": issues,
-                "created_at": r["created_at"],
-                "run_id": r["reviewer_run_id"],
-                "summary": (r["verdict"] or "")[:200],
-            }
-        )
-    items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
-    return items[:limit]
 
 
 def judgements(
@@ -1431,8 +1168,7 @@ def queue_forge_inbox() -> dict[str, Any]:
     try:
         return api_forge_inbox_simple(conn)
     finally:
-        conn.close()
-
+        pass
 
 def judge_verdicts(
     work_item_id: str | None = None,
@@ -1451,8 +1187,7 @@ def fsm_work_item() -> dict[str, Any]:
     try:
         return _fsm_stub(conn)
     finally:
-        conn.close()
-
+        pass
 
 def tree() -> dict[str, Any]:
     conn = _open_ro()
@@ -1482,178 +1217,6 @@ def failures() -> dict[str, Any]:
 
 def hr_stub() -> dict[str, Any]:
     return {"policies": [], "proposals": []}
-
-
-# ═══════════════════════════════════════════════════════
-# CHAT (Qwen SSE)
-# ═══════════════════════════════════════════════════════
-
-async def chat_qwen_create(request: Request) -> dict[str, str]:
-    """
-    Создать сессию чата с Qwen.
-    Возвращает chat_id для подключения к SSE потоку.
-    """
-    from .db import init_db
-
-    try:
-        raw = await request.json()
-    except Exception:
-        _LOG.exception("Invalid JSON in /api/chat/qwen request")
-        raise HTTPException(status_code=400, detail="Invalid request body")
-    try:
-        payload = ChatCreateRequest.model_validate(raw)
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=e.errors()) from e
-
-    prompt = payload.prompt
-    context = payload.context
-    work_item_id = payload.work_item_id
-
-    try:
-        tmp = init_db(_db_path())
-        tmp.close()
-    except sqlite3.OperationalError as e:
-        if "locked" not in str(e).lower():
-            raise
-
-    conn = _open_rw()
-    account_manager = AccountManager(conn, FactoryLogger(conn))
-
-    # ChatService теперь принимает db_path и создаёт свои соединения
-    service = ChatService(_db_path(), account_manager)
-    try:
-        full_context = context or {}
-        if work_item_id:
-            work_item = conn.execute(
-                "SELECT * FROM work_items WHERE id = ?",
-                (work_item_id,)
-            ).fetchone()
-            if work_item:
-                full_context.update({
-                    'work_item_id': work_item_id,
-                    'kind': work_item['kind'],
-                    'title': work_item['title'],
-                    'description': work_item['description'],
-                    'status': work_item['status']
-                })
-
-        chat_id = service.create_chat_session(prompt, full_context)
-        return {"chat_id": chat_id}
-    finally:
-        service.close()
-        conn.close()
-
-
-async def chat_qwen_stream(
-    chat_id: str = FastPath(..., min_length=1, max_length=128),
-) -> StreamingResponse:
-    """SSE поток для чата с Qwen."""
-    from starlette.responses import StreamingResponse
-    from .db import init_db
-
-    try:
-        tmp = init_db(_db_path())
-        tmp.close()
-    except sqlite3.OperationalError as e:
-        if "locked" not in str(e).lower():
-            raise
-
-    conn = _open_rw()
-    account_manager = AccountManager(conn, FactoryLogger(conn))
-    service = ChatService(_db_path(), account_manager)
-
-    async def generate():
-        try:
-            async for chunk in service.stream_chat_response(chat_id):
-                yield chunk
-        finally:
-            service.close()
-            conn.close()
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
-        }
-    )
-
-
-# ═══════════════════════════════════════════════════════
-# QWEN FIX (Auto-fix for Forge errors)
-# ═══════════════════════════════════════════════════════
-
-def qwen_fix_endpoint(
-    body: QwenFixRequest = Body(...),
-    _: None = Depends(require_api_key),
-) -> dict[str, Any]:
-    """
-    Запрос исправления ошибки у Qwen.
-    Используется для авто-исправления Forge ошибок.
-    """
-    error_type = str(body.type or "unknown").strip()
-    message = body.message.strip()
-    context = body.context
-    
-    # Промпт для Qwen
-    prompt = f"""
-Произошла ошибка при выполнении Forge задачи.
-
-Тип ошибки: {error_type}
-Сообщение: {message}
-Контекст: {json.dumps(context, indent=2)}
-
-Проанализируй ошибку и предложи исправление.
-Верни ТОЛЬКО JSON без markdown:
-{{
-  "suggestion": "Описание проблемы и решения",
-  "files": ["path/to/file.py"],
-  "changes": [
-    {{
-      "file": "path/to/file.py",
-      "action": "modify",
-      "content": "Новое содержимое файла или diff"
-    }}
-  ],
-  "confidence": 0.95
-}}
-"""
-    
-    try:
-        # Вызов Qwen CLI
-        with _open_rw() as conn:
-            logger = FactoryLogger(conn)
-            am = AccountManager(conn, logger)
-            result = run_qwen_cli(
-                conn=conn,
-                account_manager=am,
-                logger=logger,
-                work_item_id="api_fix_preview",
-                title=f"Fix: {error_type}",
-                description=message,
-                full_prompt=prompt,
-            )
-        result_text = result.stdout or result.stderr or ""
-        
-        # Парсинг JSON ответа
-        import re
-        json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
-        if json_match:
-            fix = json.loads(json_match.group())
-        else:
-            fix = json.loads(result_text)
-        
-        return {"fix": fix, "ok": True}
-        
-    except json.JSONDecodeError:
-        _LOG.exception("Qwen fix JSON error")
-        raise HTTPException(status_code=500, detail={"error": "Invalid JSON from Qwen"})
-    except Exception:
-        _LOG.exception("Qwen fix error")
-        raise HTTPException(status_code=500, detail={"error": "Fix failed"})
-
 
 
 def _include_domain_routers() -> None:
