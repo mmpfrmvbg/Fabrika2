@@ -14,8 +14,14 @@ from .db import ensure_schema, get_connection, init_db
 _API_ENDPOINT_NAMES: tuple[str, ...] = (
     "health",
     "api_health",
-    "list_events",
-    "stream_events",
+    "api_metrics",
+    "orchestrator_status",
+    "orchestrator_start",
+    "orchestrator_stop",
+    "orchestrator_health",
+    "orchestrator_tick",
+    "chat_qwen_create",
+    "chat_qwen_stream",
     "api_analytics",
     "stats",
     "api_workers_status",
@@ -36,6 +42,7 @@ _API_ENDPOINT_NAMES: tuple[str, ...] = (
     "failure_clusters",
     "failures",
     "hr_stub",
+    "qwen_fix_endpoint",
     "list_work_items",
     "export_work_items",
     "work_items_tree_endpoint",
@@ -49,24 +56,6 @@ _API_ENDPOINT_NAMES: tuple[str, ...] = (
     "get_work_item",
     "get_task_bundle",
     "create_work_item_legacy",
-    "create_run",
-    "runs_for_work_item",
-    "list_runs",
-    "get_run_detail",
-    "get_run_steps",
-    "get_effective_run_id",
-)
-
-_ROUTER_ENDPOINT_NAMES: tuple[str, ...] = (
-    "api_metrics",
-    "orchestrator_status",
-    "orchestrator_start",
-    "orchestrator_stop",
-    "orchestrator_health",
-    "orchestrator_tick",
-    "chat_qwen_create",
-    "chat_qwen_stream",
-    "qwen_fix_endpoint",
 )
 
 
@@ -86,25 +75,6 @@ def __getattr__(name: str) -> Callable[..., Any]:
 
         return getattr(journal, name)
     if name in {
-        "api_metrics",
-        "orchestrator_status",
-        "orchestrator_start",
-        "orchestrator_stop",
-        "orchestrator_health",
-        "orchestrator_tick",
-    }:
-        from .routers import orchestrator
-
-        return getattr(orchestrator, name)
-    if name in {"chat_qwen_create", "chat_qwen_stream"}:
-        from .routers import chat
-
-        return getattr(chat, name)
-    if name in {"qwen_fix_endpoint"}:
-        from .routers import qwen
-
-        return getattr(qwen, name)
-    if name in {
         "api_analytics",
         "stats",
         "api_workers_status",
@@ -122,6 +92,19 @@ def __getattr__(name: str) -> Callable[..., Any]:
         from .routers import visions
 
         return getattr(visions, name)
+    if name in {
+        "create_run",
+        "runs_for_work_item",
+        "list_runs",
+        "get_run_detail",
+        "get_run_steps",
+        "get_effective_run_id",
+        "list_events",
+        "stream_events",
+    }:
+        from .routers import runs
+
+        return getattr(runs, name)
     if name in _API_ENDPOINT_NAMES:
         return getattr(_api_server(), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
@@ -132,5 +115,4 @@ __all__ = [
     "get_connection",
     "init_db",
     *_API_ENDPOINT_NAMES,
-    *_ROUTER_ENDPOINT_NAMES,
 ]
