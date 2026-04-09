@@ -1092,6 +1092,28 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     return
                 _json_response(self, eff)
                 return
+            if path == "/api/runs_effective":
+                rid_eff_q = (qs.get("run_id") or [""])[0].strip()
+                if not rid_eff_q:
+                    _json_response(self, {"error": "bad_request", "message": "run_id is required"}, 400)
+                    return
+                eff_q = _run_effective(conn, rid_eff_q)
+                if eff_q is None:
+                    _json_response(self, {"error": "not_found", "run_id": rid_eff_q}, 404)
+                    return
+                _json_response(self, eff_q)
+                return
+            if path == "/api/runs_detail":
+                rid_q = (qs.get("run_id") or [""])[0].strip()
+                if not rid_q:
+                    _json_response(self, {"error": "bad_request", "message": "run_id is required"}, 400)
+                    return
+                row = conn.execute("SELECT work_item_id FROM runs WHERE id = ?", (rid_q,)).fetchone()
+                if not row:
+                    _json_response(self, {"error": "not_found", "run_id": rid_q}, 404)
+                    return
+                _json_response(self, _runs_detail(conn, row["work_item_id"]))
+                return
             runs_rest = path[len("/api/runs/") :] if path.startswith("/api/runs/") else ""
             if runs_rest:
                 rid_or_wi = unquote(runs_rest.strip("/"))
