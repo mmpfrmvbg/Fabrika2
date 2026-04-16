@@ -206,6 +206,7 @@ ORCHESTRATOR_ARCHITECT_SCAN_TICKS = int(
 )
 API_HOST = os.environ.get("FACTORY_API_HOST", "127.0.0.1")
 API_PORT = env_int("FACTORY_API_PORT", 8000, minimum=1)
+FACTORY_WORKSPACE_ROOT = (os.environ.get("FACTORY_WORKSPACE_ROOT") or "").strip() or None
 def get_factory_api_key() -> str | None:
     """Optional API key for protecting API routes."""
     return (os.environ.get("FACTORY_API_KEY") or "").strip() or None

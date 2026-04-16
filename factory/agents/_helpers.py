@@ -151,6 +151,60 @@ def finish_run(
             )
 
 
+def persist_run_and_transition(
+    conn: Any,
+    *,
+    run_id: str,
+    wi_id: str,
+    next_event: str,
+    payload: dict[str, Any],
+) -> tuple[bool, str]:
+    """
+    Atomically persist run completion and FSM transition in one SAVEPOINT.
+
+    Expected payload keys:
+      - sm: StateMachine
+      - logger: FactoryLogger | None
+      - ok: bool
+      - error_summary: str | None
+      - actor_role: str | None
+    """
+    sm = payload["sm"]
+    logger = payload.get("logger")
+    ok = bool(payload.get("ok", True))
+    error_summary = payload.get("error_summary")
+    actor_role = payload.get("actor_role")
+
+    conn.execute("SAVEPOINT run_transition")
+    try:
+        finish_run(
+            conn,
+            run_id,
+            ok=ok,
+            error_summary=error_summary,
+            logger=logger,
+        )
+        if ok:
+            ok_fsm, msg_fsm = sm.apply_transition(
+                wi_id,
+                next_event,
+                actor_role=actor_role,
+                run_id=run_id,
+            )
+            if not ok_fsm:
+                conn.execute("ROLLBACK TO SAVEPOINT run_transition")
+                conn.execute("RELEASE SAVEPOINT run_transition")
+                return False, msg_fsm
+        else:
+            ok_fsm, msg_fsm = False, error_summary or "run_failed"
+        conn.execute("RELEASE SAVEPOINT run_transition")
+        return ok_fsm, msg_fsm
+    except Exception:
+        conn.execute("ROLLBACK TO SAVEPOINT run_transition")
+        conn.execute("RELEASE SAVEPOINT run_transition")
+        raise
+
+
 def insert_run_step(
     conn: Any,
     run_id: str,

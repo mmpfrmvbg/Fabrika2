@@ -46,7 +46,7 @@ def apply_rule(
         **(extra_context or {}),
     }
 
-    with transaction(sm.conn):
+    def _apply() -> None:
         sm.conn.execute(
             """
             UPDATE work_items
@@ -118,6 +118,11 @@ def apply_rule(
             for action_name in action_names:
                 action_fn = sm.actions.resolve(action_name)
                 action_fn(wi_id, **ctx)
+    if sm.conn.in_transaction:
+        _apply()
+    else:
+        with transaction(sm.conn):
+            _apply()
 
     return True, f"{old_status} -> {new_status}"
 

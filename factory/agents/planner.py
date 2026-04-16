@@ -21,7 +21,13 @@ from ..qwen_cli_runner import run_qwen_cli
 from ..forge_sandbox import workspace_root
 from ..work_items import WorkItemOps
 from ..workspace_scanner import scan_workspace
-from ._helpers import finish_run, insert_run, insert_run_step, lease_queue_row
+from ._helpers import (
+    finish_run,
+    insert_run,
+    insert_run_step,
+    lease_queue_row,
+    persist_run_and_transition,
+)
 
 if TYPE_CHECKING:
     from ..orchestrator_core import Orchestrator
@@ -439,21 +445,7 @@ def run_planner(orchestrator: Orchestrator, item: dict) -> None:
             {"step_kind": "decision", "role": "planner", "tree_stats": _collect_tree_stats(out.items)},
             summary="planner_decomposed",
         )
-        ok, msg = sm.apply_transition(
-            wi_id,
-            "planner_decomposed",
-            actor_role=Role.PLANNER.value,
-            run_id=run_id,
-        )
-        if ok:
-            for row in conn.execute("SELECT id FROM work_items WHERE parent_id = ?", (wi_id,)):
-                sm.actions.action_notify_architect(row["id"])
-            conn.execute("DELETE FROM work_item_queue WHERE work_item_id = ?", (wi_id,))
-        else:
-            conn.execute(
-                "UPDATE work_item_queue SET lease_owner = NULL, lease_until = NULL WHERE work_item_id = ?",
-                (wi_id,),
-            )
+        ok = True
     except Exception as e:  # noqa: BLE001
         ok = False
         msg = str(e)
@@ -465,4 +457,29 @@ def run_planner(orchestrator: Orchestrator, item: dict) -> None:
             {"step_kind": "error", "role": "planner", "error": msg},
             summary="planner_failed",
         )
-    finish_run(conn, run_id, ok=ok, error_summary=None if ok else msg, logger=logger)
+    if ok:
+        ok_final, msg_final = persist_run_and_transition(
+            conn,
+            run_id=run_id,
+            wi_id=wi_id,
+            next_event="planner_decomposed",
+            payload={
+                "sm": sm,
+                "logger": logger,
+                "ok": True,
+                "error_summary": None,
+                "actor_role": Role.PLANNER.value,
+            },
+        )
+        if not ok_final:
+            conn.execute(
+                "UPDATE work_item_queue SET lease_owner = NULL, lease_until = NULL WHERE work_item_id = ?",
+                (wi_id,),
+            )
+            finish_run(conn, run_id, ok=False, error_summary=msg_final, logger=logger)
+        else:
+            for row in conn.execute("SELECT id FROM work_items WHERE parent_id = ?", (wi_id,)):
+                sm.actions.action_notify_architect(row["id"])
+            conn.execute("DELETE FROM work_item_queue WHERE work_item_id = ?", (wi_id,))
+    else:
+        finish_run(conn, run_id, ok=False, error_summary=msg, logger=logger)

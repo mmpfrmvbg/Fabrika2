@@ -16,9 +16,7 @@ import logging
 import os
 import sqlite3
 import sys
-import threading
 import time
-from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Awaitable, Callable
@@ -30,14 +28,11 @@ from fastapi.responses import JSONResponse, Response
 from .composition import wire
 from .config import (API_HOST, API_PORT, ORCHESTRATOR_TICK_INTERVAL_SECONDS,
                      get_factory_api_key, load_dotenv)
-from .db import DB_PATH, _db_path, get_connection
+from .db import DB_PATH, _db_path, get_async_connection, get_connection
 from .logging import FactoryLogger
 from .logging_config import configure_logging
-from .middleware import (_RATE_LIMITS_PER_MINUTE, _RATE_LIMIT_STATE, _client_ip,
-                         _rate_limit_meta, rate_limit_middleware)
-from .models import EventType
+from .middleware import rate_limit_middleware
 from .orchestrator_thread import _OrchestratorThread
-from .workers_status import workers_status_payload
 
 load_dotenv()
 
@@ -107,6 +102,11 @@ def _tick_interval_seconds() -> float:
 _orch_thread = _OrchestratorThread()
 
 
+def _embedded_orchestrator_enabled() -> bool:
+    raw = (os.environ.get("FACTORY_EMBEDDED_ORCHESTRATOR") or "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _ensure_api_key_configured() -> str:
     api_key = get_factory_api_key()
     if not api_key:
@@ -120,11 +120,13 @@ def _ensure_api_key_configured() -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _ensure_api_key_configured()
-    _orch_thread.start()
+    if _embedded_orchestrator_enabled():
+        _orch_thread.start()
     try:
         yield
     finally:
-        _orch_thread.stop()
+        if _embedded_orchestrator_enabled():
+            _orch_thread.stop()
         _close_logger()
 
 
@@ -148,7 +150,7 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-def api_health() -> dict[str, Any]:
+async def api_health() -> dict[str, Any]:
     uptime_seconds = max(0.0, time.monotonic() - _API_STARTED_AT_MONOTONIC)
     db_connected = False
     worker_status: dict[str, Any] = {"active": 0, "workers": [], "leases_total": 0}
@@ -158,16 +160,78 @@ def api_health() -> dict[str, Any]:
         "orchestrator_heartbeat_state": "none",
     }
     try:
-        conn = get_connection(DB_PATH, read_only=True)
+        conn = await get_async_connection(DB_PATH, read_only=True)
         try:
-            conn.execute("SELECT 1").fetchone()
+            cursor = await conn.execute("SELECT 1")
+            await cursor.fetchone()
             db_connected = True
-            worker_status = workers_status_payload(conn)
-            from .routers.orchestrator import _orchestrator_heartbeat_from_conn
+            now_iso = datetime.now(timezone.utc).isoformat()
+            worker_rows = await (
+                await conn.execute(
+                    """
+                    SELECT queue_name, lease_owner, lease_until, attempts, work_item_id
+                    FROM work_item_queue
+                    WHERE lease_owner IS NOT NULL AND lease_until > ?
+                    ORDER BY lease_until DESC
+                    """,
+                    (now_iso,),
+                )
+            ).fetchall()
+            leases_total_row = await (
+                await conn.execute(
+                    "SELECT COUNT(*) AS c FROM work_item_queue WHERE lease_owner IS NOT NULL"
+                )
+            ).fetchone()
+            worker_status = {
+                "active": len(worker_rows),
+                "workers": [
+                    {
+                        "queue": row["queue_name"],
+                        "owner": row["lease_owner"],
+                        "lease_until": row["lease_until"],
+                        "attempts": int(row["attempts"] or 0),
+                        "work_item_id": row["work_item_id"],
+                    }
+                    for row in worker_rows
+                ],
+                "leases_total": int(leases_total_row["c"] if leases_total_row else 0),
+            }
 
-            orchestrator_heartbeat = _orchestrator_heartbeat_from_conn(conn)
+            heartbeat_row = await (
+                await conn.execute(
+                    """
+                    SELECT MAX(event_time) AS t FROM event_log
+                    WHERE LOWER(COALESCE(actor_role, '')) = 'orchestrator'
+                    """
+                )
+            ).fetchone()
+            ts = heartbeat_row["t"] if heartbeat_row else None
+            dt = None
+            if ts:
+                s = str(ts).strip()
+                if s.endswith("Z"):
+                    s = s[:-1] + "+00:00"
+                try:
+                    dt = datetime.fromisoformat(s)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    dt = None
+            if dt:
+                sec = max(0.0, (datetime.now(timezone.utc) - dt).total_seconds())
+                if sec < 30.0:
+                    hb_state = "active"
+                elif sec < 60.0:
+                    hb_state = "warn"
+                else:
+                    hb_state = "stale"
+                orchestrator_heartbeat = {
+                    "orchestrator_last_event_time": ts,
+                    "orchestrator_seconds_since_last_event": sec,
+                    "orchestrator_heartbeat_state": hb_state,
+                }
         finally:
-            conn.close()
+            await conn.close()
     except HTTPException:
         db_connected = False
     except (sqlite3.OperationalError, sqlite3.DatabaseError) as exc:
@@ -196,6 +260,8 @@ async def api_key_auth_middleware(
     request: Request,
     call_next: Callable[[Request], Awaitable[Response]],
 ) -> Response:
+    if request.url.path in {"/api/health", "/health"}:
+        return await call_next(request)
     if request.url.path.startswith("/api") and request.method != "OPTIONS":
         try:
             await require_api_key(request)

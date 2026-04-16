@@ -22,7 +22,13 @@ from ..contracts.judge import (
 from ..db import gen_id, resolve_effective_run_id
 from ..models import EventType, Role, RunType, Severity, StepKind, WorkItemKind
 from ..qwen_cli_runner import run_qwen_cli
-from ._helpers import finish_run, insert_run, insert_run_step, lease_queue_row
+from ._helpers import (
+    finish_run,
+    insert_run,
+    insert_run_step,
+    lease_queue_row,
+    persist_run_and_transition,
+)
 
 if TYPE_CHECKING:
     from ..orchestrator_core import Orchestrator
@@ -711,11 +717,18 @@ def run_judge(orchestrator: Orchestrator, item: dict) -> None:
     )
 
     event = verdict.next_event
-    ok, msg = sm.apply_transition(
-        wi_id,
-        event,
-        actor_role=Role.JUDGE.value,
+    ok, msg = persist_run_and_transition(
+        conn,
         run_id=run_id,
+        wi_id=wi_id,
+        next_event=event,
+        payload={
+            "sm": sm,
+            "logger": logger,
+            "ok": True,
+            "error_summary": None,
+            "actor_role": Role.JUDGE.value,
+        },
     )
     if ok:
         if verdict.verdict == "approved":
@@ -748,4 +761,3 @@ def run_judge(orchestrator: Orchestrator, item: dict) -> None:
             """,
             (wi_id,),
         )
-    finish_run(conn, run_id, ok=ok, error_summary=None if ok else msg, logger=logger)

@@ -8,10 +8,15 @@ services:
       FACTORY_WORKER_TIMEOUT: ${FACTORY_WORKER_TIMEOUT:-1800}
       FACTORY_API_HOST: ${FACTORY_API_HOST:-0.0.0.0}
       FACTORY_API_PORT: ${FACTORY_API_PORT:-8000}
+      FACTORY_API_KEY: ${FACTORY_API_KEY:?Error: FACTORY_API_KEY must be set}
+      FACTORY_EMBEDDED_ORCHESTRATOR: ${FACTORY_EMBEDDED_ORCHESTRATOR:-0}
+      FACTORY_WORKSPACE_ROOT: /data/workspaces
     volumes:
       - ./data:/data
     ports:
       - "8000:8000"
+    networks:
+      - factory_net
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
       interval: 15s
@@ -29,5 +34,17 @@ services:
       FACTORY_WORKER_TIMEOUT: ${FACTORY_WORKER_TIMEOUT:-1800}
       FACTORY_API_HOST: ${FACTORY_API_HOST:-0.0.0.0}
       FACTORY_API_PORT: ${FACTORY_API_PORT:-8000}
+      FACTORY_API_KEY: ${FACTORY_API_KEY:?Error: FACTORY_API_KEY must be set}
+      FACTORY_EMBEDDED_ORCHESTRATOR: ${FACTORY_EMBEDDED_ORCHESTRATOR:-0}
+      FACTORY_WORKSPACE_ROOT: /data/workspaces
     volumes:
       - ./data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - factory_net
+
+networks:
+  factory_net:
+    internal: true
