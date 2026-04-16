@@ -32,6 +32,7 @@ from ._helpers import (
     insert_run,
     insert_run_step,
     lease_queue_row,
+    persist_run_and_transition,
 )
 
 if TYPE_CHECKING:
@@ -706,11 +707,18 @@ def run_review(orchestrator: Orchestrator, item: dict) -> None:
         ),
     )
 
-    ok_fsm, msg_fsm = sm.apply_transition(
-        wi_id,
-        result.next_event,
-        actor_role=Role.REVIEWER.value,
+    ok_fsm, msg_fsm = persist_run_and_transition(
+        conn,
         run_id=run_id,
+        wi_id=wi_id,
+        next_event=result.next_event,
+        payload={
+            "sm": sm,
+            "logger": logger,
+            "ok": True,
+            "error_summary": None,
+            "actor_role": Role.REVIEWER.value,
+        },
     )
     if not ok_fsm:
         conn.execute(
@@ -720,7 +728,6 @@ def run_review(orchestrator: Orchestrator, item: dict) -> None:
             """,
             (wi_id,),
         )
-        finish_run(conn, run_id, ok=False, error_summary=msg_fsm, logger=logger)
         return
 
     if result.verdict == "approved":
@@ -748,5 +755,3 @@ def run_review(orchestrator: Orchestrator, item: dict) -> None:
             payload={"review_result": result.model_dump()},
             tags=["review"],
         )
-
-    finish_run(conn, run_id, ok=True, logger=logger)

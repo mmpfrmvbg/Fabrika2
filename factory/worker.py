@@ -1,7 +1,9 @@
 """
 Отдельный процесс-исполнитель: claim ``forge_inbox`` → ``forge_started`` → forge → review → judge.
 
-Не запускает цикл ``Orchestrator.tick()`` целиком; оркестратор в ``api_server`` по-прежнему обслуживает очереди.
+Legacy entrypoint для ручного локального запуска worker-пайплайна.
+В production docker-compose используется ``python -m factory.orchestrator_core`` (service: worker),
+а встроенный оркестратор в API отключается через ``FACTORY_EMBEDDED_ORCHESTRATOR=0``.
 
 Запуск: ``python -m factory.worker`` или ``python -m factory.worker --id worker-2 --poll 3``.
 """

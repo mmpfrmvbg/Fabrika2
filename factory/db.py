@@ -6,9 +6,47 @@ import json
 import logging
 import sqlite3
 import uuid
+import asyncio
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator
+
+try:
+    import aiosqlite
+except ModuleNotFoundError:  # pragma: no cover - fallback for offline test environments
+    class _AsyncCursor:
+        def __init__(self, cursor: sqlite3.Cursor) -> None:
+            self._cursor = cursor
+
+        async def fetchone(self):
+            return await asyncio.to_thread(self._cursor.fetchone)
+
+        async def fetchall(self):
+            return await asyncio.to_thread(self._cursor.fetchall)
+
+    class _AsyncConnection:
+        def __init__(self, conn: sqlite3.Connection) -> None:
+            self._conn = conn
+            self.row_factory = sqlite3.Row
+
+        async def execute(self, sql: str, params: tuple[Any, ...] = ()):
+            cur = await asyncio.to_thread(self._conn.execute, sql, params)
+            return _AsyncCursor(cur)
+
+        async def close(self) -> None:
+            await asyncio.to_thread(self._conn.close)
+
+    class _AioSqliteCompat:
+        Row = sqlite3.Row
+        OperationalError = sqlite3.OperationalError
+
+        @staticmethod
+        async def connect(*args: Any, **kwargs: Any) -> _AsyncConnection:
+            conn = await asyncio.to_thread(sqlite3.connect, *args, **kwargs)
+            conn.row_factory = sqlite3.Row
+            return _AsyncConnection(conn)
+
+    aiosqlite = _AioSqliteCompat()  # type: ignore[assignment]
 
 from .config import ACCOUNTS, DB_PATH, SQLITE_BUSY_TIMEOUT_MS, SQLITE_TIMEOUT_SECONDS
 from .db_migrations import ensure_schema, migrate_schema
@@ -116,6 +154,41 @@ def get_connection(db_path: Path | str = DB_PATH, *, read_only: bool = False) ->
     try:
         conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
     except sqlite3.OperationalError as e:
+        _LOG.debug("Skipping wal_checkpoint(PASSIVE): %s", e)
+    return conn
+
+
+async def get_async_connection(
+    db_path: Path | str = DB_PATH,
+    *,
+    read_only: bool = False,
+) -> aiosqlite.Connection:
+    """Async SQLite connection for use inside async API handlers."""
+    p = Path(db_path).resolve()
+    if read_only:
+        if not p.exists():
+            raise FileNotFoundError(str(p))
+        uri = p.as_uri() + "?mode=ro"
+        conn = await aiosqlite.connect(
+            uri,
+            uri=True,
+            timeout=_SQLITE_TIMEOUT_SEC,
+        )
+        await conn.execute(f"PRAGMA busy_timeout = {_SQLITE_BUSY_TIMEOUT_MS}")
+        await conn.execute("PRAGMA query_only = ON")
+    else:
+        conn = await aiosqlite.connect(
+            str(p),
+            timeout=_SQLITE_TIMEOUT_SEC,
+        )
+        await conn.execute("PRAGMA journal_mode = WAL")
+        await conn.execute(f"PRAGMA busy_timeout = {_SQLITE_BUSY_TIMEOUT_MS}")
+        await conn.execute("PRAGMA wal_autocheckpoint = 100")
+    conn.row_factory = aiosqlite.Row
+    await conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        await conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+    except aiosqlite.OperationalError as e:
         _LOG.debug("Skipping wal_checkpoint(PASSIVE): %s", e)
     return conn
 

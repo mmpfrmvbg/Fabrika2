@@ -1,19 +1,42 @@
 from __future__ import annotations
 
 import os
-import threading
 import time
-from collections import defaultdict
 from typing import Awaitable, Callable
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
+from .config import DB_PATH
+from .db import get_connection
+
 _RATE_LIMIT_WINDOW_SECONDS = 60
 _RATE_LIMITS_PER_MINUTE = {"GET": 300, "POST": 60}
-_RATE_LIMIT_LOCK = threading.Lock()
-_RATE_LIMIT_STATE: dict[tuple[str, str], dict[str, float | int]] = defaultdict(dict)
-_RATE_LIMIT_TTL_SECONDS = 600
+_RATE_LIMIT_STATE: dict[tuple[str, str], dict[str, float | int]] = {}
+
+
+def _ensure_rate_limit_schema(conn) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS rate_limit_log (
+            key TEXT NOT NULL,
+            window_start INTEGER NOT NULL,
+            count INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (key, window_start)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_rate_limit_log_window
+        ON rate_limit_log(window_start)
+        """
+    )
+
+
+def _rate_limit_key(request: Request) -> str:
+    api_key = (request.headers.get("X-API-Key") or "").strip() or "anonymous"
+    return f"{api_key}:{request.method.upper()}"
 
 
 def _client_ip(request: Request) -> str:
@@ -28,38 +51,32 @@ def _client_ip(request: Request) -> str:
     return "unknown"
 
 
-def _rate_limit_meta(method: str, ip: str) -> dict[str, int]:
+def _rate_limit_meta(method: str, key: str) -> dict[str, int]:
     limit = _RATE_LIMITS_PER_MINUTE.get(method.upper())
     if not limit:
         return {"limit": 0, "remaining": 0, "retry_after": 0, "is_limited": 0}
-
-    key = (method.upper(), ip)
-    now = time.time()
-    with _RATE_LIMIT_LOCK:
-        expired_keys = [
-            state_key
-            for state_key, state in _RATE_LIMIT_STATE.items()
-            if now - float(state.get("last_access", 0.0)) > _RATE_LIMIT_TTL_SECONDS
-        ]
-        for state_key in expired_keys:
-            _RATE_LIMIT_STATE.pop(state_key, None)
-
-        state = _RATE_LIMIT_STATE.get(key) or {"window_start": now, "count": 0}
-        window_start = float(state.get("window_start", now))
-        count = int(state.get("count", 0))
+    now = int(time.time())
+    window_start = now - (now % _RATE_LIMIT_WINDOW_SECONDS)
+    prev_window = window_start - _RATE_LIMIT_WINDOW_SECONDS
+    with get_connection(DB_PATH) as conn:
+        _ensure_rate_limit_schema(conn)
+        conn.execute("DELETE FROM rate_limit_log WHERE window_start < ?", (prev_window,))
+        conn.execute(
+            """
+            INSERT INTO rate_limit_log (key, window_start, count)
+            VALUES (?, ?, 1)
+            ON CONFLICT(key, window_start) DO UPDATE SET count = count + 1
+            """,
+            (key, window_start),
+        )
+        row = conn.execute(
+            "SELECT count FROM rate_limit_log WHERE key = ? AND window_start = ?",
+            (key, window_start),
+        ).fetchone()
+        count = int(row["count"] if row else 0)
         elapsed = now - window_start
-        if elapsed >= _RATE_LIMIT_WINDOW_SECONDS:
-            window_start = now
-            count = 0
-            elapsed = 0
-        count += 1
-        _RATE_LIMIT_STATE[key] = {
-            "window_start": window_start,
-            "count": count,
-            "last_access": now,
-        }
         remaining = max(0, limit - count)
-        retry_after = max(0, int(_RATE_LIMIT_WINDOW_SECONDS - elapsed))
+        retry_after = max(0, _RATE_LIMIT_WINDOW_SECONDS - elapsed)
         is_limited = 1 if count > limit else 0
     return {
         "limit": limit,
@@ -73,8 +90,8 @@ async def rate_limit_middleware(
     request: Request,
     call_next: Callable[[Request], Awaitable[Response]],
 ) -> Response:
-    ip = _client_ip(request)
-    meta = _rate_limit_meta(request.method, ip)
+    _client_ip(request)
+    meta = _rate_limit_meta(request.method, _rate_limit_key(request))
     response: Response
     if meta["is_limited"]:
         response = JSONResponse(

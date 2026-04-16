@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import sqlite3
+from pathlib import Path
+
 import pytest
 from starlette.requests import Request
 
@@ -46,6 +49,8 @@ def test_rate_limit_meta_counts_and_limits(monkeypatch: pytest.MonkeyPatch) -> N
     original_limits = dict(middleware._RATE_LIMITS_PER_MINUTE)
     middleware._RATE_LIMIT_STATE.clear()
     middleware._RATE_LIMITS_PER_MINUTE["GET"] = 2
+    db_path = Path("test_rate_limit_meta_counts_and_limits.db")
+    monkeypatch.setattr(middleware, "DB_PATH", db_path)
 
     now = 1_000_000.0
     monkeypatch.setattr(middleware.time, "time", lambda: now)
@@ -56,28 +61,40 @@ def test_rate_limit_meta_counts_and_limits(monkeypatch: pytest.MonkeyPatch) -> N
     finally:
         middleware._RATE_LIMITS_PER_MINUTE.clear()
         middleware._RATE_LIMITS_PER_MINUTE.update(original_limits)
+        if db_path.exists():
+            db_path.unlink()
 
-    assert first == {"limit": 2, "remaining": 1, "retry_after": 60, "is_limited": 0}
-    assert second == {"limit": 2, "remaining": 0, "retry_after": 60, "is_limited": 0}
-    assert third == {"limit": 2, "remaining": 0, "retry_after": 60, "is_limited": 1}
+    assert first["limit"] == 2 and first["remaining"] == 1 and first["is_limited"] == 0
+    assert second["limit"] == 2 and second["remaining"] == 0 and second["is_limited"] == 0
+    assert third["limit"] == 2 and third["remaining"] == 0 and third["is_limited"] == 1
+    assert 0 < first["retry_after"] <= 60
+    assert 0 < second["retry_after"] <= 60
+    assert 0 < third["retry_after"] <= 60
 
 
 def test_rate_limit_meta_evicts_ttl_expired_state(monkeypatch: pytest.MonkeyPatch) -> None:
-    now = 2_000_000.0
-    middleware._RATE_LIMIT_STATE.clear()
-    middleware._RATE_LIMIT_STATE[("GET", "stale")] = {
-        "window_start": now - 700.0,
-        "count": 1,
-        "last_access": now - 700.0,
-    }
-    middleware._RATE_LIMIT_STATE[("GET", "fresh")] = {
-        "window_start": now - 1.0,
-        "count": 1,
-        "last_access": now - 1.0,
-    }
+    db_path = Path("test_rate_limit_meta_evicts_ttl_expired_state.db")
+    monkeypatch.setattr(middleware, "DB_PATH", db_path)
+    now = 2_000_000
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS rate_limit_log (key TEXT, window_start INTEGER, count INTEGER, PRIMARY KEY (key, window_start))"
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO rate_limit_log(key, window_start, count) VALUES (?, ?, ?)",
+            ("stale", now - 120, 1),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO rate_limit_log(key, window_start, count) VALUES (?, ?, ?)",
+            ("fresh", now - 60, 1),
+        )
     monkeypatch.setattr(middleware.time, "time", lambda: now)
 
     middleware._rate_limit_meta("GET", "127.0.0.1")
 
-    assert ("GET", "stale") not in middleware._RATE_LIMIT_STATE
-    assert ("GET", "fresh") in middleware._RATE_LIMIT_STATE
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute("SELECT key, window_start FROM rate_limit_log ORDER BY key").fetchall()
+    assert ("stale", now - 120) not in rows
+    assert ("fresh", now - 60) in rows
+    if db_path.exists():
+        db_path.unlink()

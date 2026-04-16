@@ -58,6 +58,16 @@ CREATE TABLE IF NOT EXISTS api_usage (
 CREATE INDEX IF NOT EXISTS idx_api_usage_account_day
     ON api_usage(account_id, created_at);
 
+CREATE TABLE IF NOT EXISTS rate_limit_log (
+    key             TEXT NOT NULL,
+    window_start    INTEGER NOT NULL,
+    count           INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (key, window_start)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rate_limit_log_window
+    ON rate_limit_log(window_start);
+
 
 -- ───────────────────────────────────────────────────
 --  2. ИЕРАРХИЯ ЗАДАЧ (work_items)
