@@ -49,7 +49,6 @@ def test_domain_router_endpoints_are_registered() -> None:
 @pytest.mark.parametrize(
     "endpoint",
     [
-        "/api/health",
         "/api/work-items",
         "/api/journal",
         "/api/orchestrator/status",

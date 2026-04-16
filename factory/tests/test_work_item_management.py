@@ -8,7 +8,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from factory import api_server
 from factory.api_server import app
+from factory.routers import work_items as work_items_router
 from factory.db import init_db
 from factory.logging import FactoryLogger
 from factory.work_items import WorkItemOps
@@ -19,16 +21,29 @@ class WorkItemManagementApiTests(unittest.TestCase):
         self.path = Path(tempfile.mkstemp(prefix="factory_wi_mgmt_", suffix=".db")[1])
         init_db(self.path).close()
         self.prev_db = os.environ.get("FACTORY_DB")
+        self.prev_api_key = os.environ.get("FACTORY_API_KEY")
+        self.prev_api_server_db_path = api_server.DB_PATH
+        self.prev_work_items_router_db_path = work_items_router.DB_PATH
         os.environ["FACTORY_DB"] = str(self.path)
+        os.environ["FACTORY_API_KEY"] = "test-api-key"
+        api_server.DB_PATH = self.path
+        work_items_router.DB_PATH = self.path
         from fastapi.testclient import TestClient
 
         self.client = TestClient(app)
+        self.headers = {"X-API-Key": "test-api-key"}
 
     def tearDown(self) -> None:
         if self.prev_db is None:
             os.environ.pop("FACTORY_DB", None)
         else:
             os.environ["FACTORY_DB"] = self.prev_db
+        if self.prev_api_key is None:
+            os.environ.pop("FACTORY_API_KEY", None)
+        else:
+            os.environ["FACTORY_API_KEY"] = self.prev_api_key
+        api_server.DB_PATH = self.prev_api_server_db_path
+        work_items_router.DB_PATH = self.prev_work_items_router_db_path
         try:
             self.path.unlink(missing_ok=True)
         except OSError:
@@ -50,7 +65,7 @@ class WorkItemManagementApiTests(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        r = self.client.post(f"/api/work-items/{vid}/cancel")
+        r = self.client.post(f"/api/work-items/{vid}/cancel", headers=self.headers)
         self.assertEqual(r.status_code, 200, r.text)
         self.assertTrue(r.json().get("ok"))
         self.assertGreaterEqual(r.json().get("cancelled_count", 0), 3)
@@ -62,7 +77,7 @@ class WorkItemManagementApiTests(unittest.TestCase):
             self.assertEqual(st, "cancelled")
         conn.close()
 
-        r2 = self.client.post(f"/api/work-items/{vid}/cancel")
+        r2 = self.client.post(f"/api/work-items/{vid}/cancel", headers=self.headers)
         self.assertEqual(r2.status_code, 400)
 
     def test_archive_work_item(self) -> None:
@@ -78,7 +93,7 @@ class WorkItemManagementApiTests(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        r = self.client.post(f"/api/work-items/{vid}/archive")
+        r = self.client.post(f"/api/work-items/{vid}/archive", headers=self.headers)
         self.assertEqual(r.status_code, 200, r.text)
         self.assertTrue(r.json().get("ok"))
         self.assertGreaterEqual(r.json().get("archived_count", 0), 3)
@@ -98,7 +113,7 @@ class WorkItemManagementApiTests(unittest.TestCase):
         conn.execute("UPDATE work_items SET status = 'planned' WHERE id = ?", (vid2,))
         conn.commit()
         conn.close()
-        r2 = self.client.post(f"/api/work-items/{vid2}/archive")
+        r2 = self.client.post(f"/api/work-items/{vid2}/archive", headers=self.headers)
         self.assertEqual(r2.status_code, 400)
 
     def test_delete_work_item(self) -> None:
@@ -110,7 +125,7 @@ class WorkItemManagementApiTests(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        r = self.client.delete(f"/api/work-items/{vid}")
+        r = self.client.delete(f"/api/work-items/{vid}", headers=self.headers)
         self.assertEqual(r.status_code, 200, r.text)
         self.assertTrue(r.json().get("ok"))
 
@@ -131,7 +146,7 @@ class WorkItemManagementApiTests(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        r2 = self.client.delete(f"/api/work-items/{vid}")
+        r2 = self.client.delete(f"/api/work-items/{vid}", headers=self.headers)
         self.assertEqual(r2.status_code, 400)
 
     def test_edit_work_item(self) -> None:
@@ -146,11 +161,19 @@ class WorkItemManagementApiTests(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        r = self.client.patch(f"/api/work-items/{vid}", json={"title": "NewTitle"})
+        r = self.client.patch(
+            f"/api/work-items/{vid}",
+            json={"title": "NewTitle"},
+            headers=self.headers,
+        )
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json()["work_item"]["title"], "NewTitle")
 
-        r2 = self.client.patch(f"/api/work-items/{aid}", json={"title": "X"})
+        r2 = self.client.patch(
+            f"/api/work-items/{aid}",
+            json={"title": "X"},
+            headers=self.headers,
+        )
         self.assertEqual(r2.status_code, 400)
 
 
