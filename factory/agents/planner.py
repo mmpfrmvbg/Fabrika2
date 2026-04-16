@@ -46,7 +46,7 @@ _PLANNER_PROMPT_V1 = _read_prompt_template()
 
 def build_planner_prompt(inp: PlannerInput) -> str:
     tpl = _PLANNER_PROMPT_V1 or ""
-    ws = scan_workspace(workspace_root(), max_files=100)
+    ws = scan_workspace(workspace_root(), max_files=500)
     return tpl.format(
         kind=inp.kind,
         title=inp.title,

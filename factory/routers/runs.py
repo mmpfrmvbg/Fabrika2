@@ -245,6 +245,36 @@ async def stream_events(
     last_event_id: int = Query(default=0, ge=0),
     once: bool = Query(default=False),
 ) -> StreamingResponse:
+    stream_flag = (request.query_params.get("stream") or "").strip().lower()
+    if stream_flag in {"1", "true", "yes", "on"}:
+        limit_raw = (request.query_params.get("limit") or "50").strip()
+        try:
+            limit = max(1, min(int(limit_raw), 500))
+        except ValueError:
+            limit = 50
+        conn = get_connection(DB_PATH, read_only=True)
+        try:
+            rows = conn.execute(
+                """
+                SELECT id, event_time, event_type, entity_type, entity_id, work_item_id,
+                       run_id, actor_role, severity, message, payload
+                FROM event_log
+                ORDER BY event_time DESC, id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            items = _rows(rows)
+        finally:
+            conn.close()
+
+        def _event_stream_once() -> Any:
+            for item in items:
+                yield f"event: {item.get('event_type', 'event')}\n"
+                yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(_event_stream_once(), media_type="text/event-stream")
+
     async def _event_stream() -> Any:
         cursor = int(last_event_id)
         while True:
