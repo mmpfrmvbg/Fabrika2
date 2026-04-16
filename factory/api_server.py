@@ -34,6 +34,16 @@ from .logging_config import configure_logging
 from .middleware import (_RATE_LIMIT_STATE, _RATE_LIMITS_PER_MINUTE,
                          _rate_limit_meta, rate_limit_middleware)
 from .orchestrator_thread import _OrchestratorThread
+from .schemas import (
+    BulkArchiveRequest,
+    ChatCreateRequest,
+    ImprovementReviewRequest,
+    QwenFixRequest,
+    RunCreateRequest,
+    VisionRequest,
+    WorkItemCreateRequest,
+    WorkItemPatchRequest,
+)
 
 load_dotenv()
 
