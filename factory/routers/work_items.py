@@ -176,7 +176,7 @@ def post_work_item_cancel(
     _: None = Depends(_require_api_key),
 ) -> dict[str, Any]:
     """FSM creator_cancelled + каскад по поддереву (post-order)."""
-    factory = wire(str(DB_PATH))
+    factory = wire(DB_PATH)
     conn: sqlite3.Connection = factory["conn"]
     sm = factory["sm"]
     logger: FactoryLogger = factory["logger"]
@@ -206,7 +206,7 @@ def post_work_item_archive(
     _: None = Depends(_require_api_key),
 ) -> dict[str, Any]:
     """FSM archive_sweep для done и всех done-потомков."""
-    factory = wire(str(DB_PATH))
+    factory = wire(DB_PATH)
     conn = factory["conn"]
     sm = factory["sm"]
     logger: FactoryLogger = factory["logger"]
@@ -312,7 +312,7 @@ def post_bulk_archive(
     """Архивирует несколько корней (обычно Vision в done)."""
     ids = body.ids
     filt = (body.filter or "").strip()
-    factory = wire(str(DB_PATH))
+    factory = wire(DB_PATH)
     conn = factory["conn"]
     sm = factory["sm"]
     try:

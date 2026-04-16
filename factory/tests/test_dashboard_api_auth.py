@@ -13,11 +13,14 @@ def _start_server() -> tuple[HTTPServer, threading.Thread, str]:
     server = HTTPServer(("127.0.0.1", 0), dashboard_api.DashboardRequestHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    host, port = server.server_address
+    host = str(server.server_address[0])
+    port = int(server.server_address[1])
     return server, thread, f"http://{host}:{port}"
 
 
-def _post_json(url: str, payload: dict, token: str | None = None) -> tuple[int, dict]:
+def _post_json(
+    url: str, payload: dict[str, object], token: str | None = None
+) -> tuple[int, dict[str, object]]:
     data = json.dumps(payload).encode("utf-8")
     req = Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/json")

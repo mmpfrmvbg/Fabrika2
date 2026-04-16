@@ -10,7 +10,7 @@ from factory import middleware
 
 
 def _request(*, client_host: str | None, headers: list[tuple[bytes, bytes]] | None = None) -> Request:
-    scope = {
+    scope: dict[str, object] = {
         "type": "http",
         "method": "GET",
         "path": "/health",
