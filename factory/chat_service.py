@@ -6,6 +6,20 @@
 Каждый worker thread должен создавать своё соединение.
 """
 import asyncio
+import json
+import logging
+import os
+import shutil
+import subprocess
+import time
+import uuid
+from datetime import datetime, timezone
+from typing import AsyncGenerator, Callable, Optional
+
+from .config import AccountManager
+from .db import get_connection
+from .logging import FactoryLogger
+from .models import EventType, Severity
 
 
 class _CompatEventLoopPolicy(asyncio.DefaultEventLoopPolicy):
@@ -19,19 +33,6 @@ class _CompatEventLoopPolicy(asyncio.DefaultEventLoopPolicy):
 
 
 asyncio.set_event_loop_policy(_CompatEventLoopPolicy())
-
-import asyncio
-import json
-import logging
-import uuid
-import time
-from typing import AsyncGenerator, Callable, Optional
-from datetime import datetime, timezone
-
-from .config import AccountManager
-from .db import get_connection
-from .logging import FactoryLogger
-from .models import EventType, Severity
 
 # Хранилище активных чат-сессий с TTL
 _active_chats: dict[str, dict] = {}
@@ -141,10 +142,7 @@ class ChatService:
         Запустить Qwen CLI в чат-режиме с callback для стриминга.
         Использует прямой subprocess вызов qwen CLI.
         """
-        import subprocess
-        import shutil
-        import os
-        
+
         full_prompt = self._build_chat_prompt(
             session['prompt'],
             session['context']
