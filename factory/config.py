@@ -54,8 +54,8 @@ def resolve_db_path(path: Path | None = None) -> Path:
     чтобы оркестратор, CLI и dashboard API использовали один файл независимо от CWD.
     """
     raw = path or Path(
-        os.environ.get("FACTORY_DB_PATH")
-        or os.environ.get("FACTORY_DB")
+        os.environ.get("FACTORY_DB")
+        or os.environ.get("FACTORY_DB_PATH")
         or str(DB_PATH)
     )
     p = Path(raw)
