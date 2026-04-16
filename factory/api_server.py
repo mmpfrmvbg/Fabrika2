@@ -27,7 +27,7 @@ from fastapi.responses import JSONResponse, Response
 
 from .composition import wire
 from .config import (API_HOST, API_PORT, ORCHESTRATOR_TICK_INTERVAL_SECONDS,
-                     get_factory_api_key, load_dotenv)
+                     get_factory_api_key, load_dotenv, resolve_db_path)
 from .db import DB_PATH, _db_path, get_async_connection, get_connection
 from .logging import FactoryLogger
 from .logging_config import configure_logging
@@ -97,6 +97,16 @@ def _utc_now_iso() -> str:
 
 def _tick_interval_seconds() -> float:
     return ORCHESTRATOR_TICK_INTERVAL_SECONDS
+
+
+def _open_ro() -> sqlite3.Connection:
+    """Compatibility helper for legacy router imports."""
+    return get_connection(resolve_db_path(), read_only=True)
+
+
+def _open_rw() -> sqlite3.Connection:
+    """Compatibility helper for legacy router imports."""
+    return get_connection(resolve_db_path(), read_only=False)
 
 
 _orch_thread = _OrchestratorThread()
@@ -291,6 +301,58 @@ async def request_timing_middleware(
 
 
 app.middleware("http")(rate_limit_middleware)
+
+
+def orchestrator_status() -> dict[str, Any]:
+    """Legacy compatibility export: delegated to orchestrator router."""
+    from .routers.orchestrator import orchestrator_status as _orchestrator_status
+
+    return _orchestrator_status()
+
+
+def orchestrator_tick() -> dict[str, Any]:
+    """Legacy compatibility export: delegated to orchestrator router."""
+    from .routers.orchestrator import orchestrator_tick as _orchestrator_tick
+
+    return _orchestrator_tick()
+
+
+def orchestrator_health() -> dict[str, Any]:
+    """Legacy compatibility export: delegated to orchestrator router."""
+    from .routers.orchestrator import orchestrator_health as _orchestrator_health
+
+    return _orchestrator_health()
+
+
+def stats() -> dict[str, Any]:
+    """Legacy compatibility export: delegated to analytics router."""
+    from .routers.analytics import stats as _stats
+
+    return _stats()
+
+
+def api_analytics(period: str = "24h") -> dict[str, Any]:
+    """Legacy compatibility export: delegated to analytics router."""
+    from .routers.analytics import api_analytics as _api_analytics
+
+    return _api_analytics(period=period)
+
+
+def list_events(
+    limit: int = 10,
+    work_item_id: str | None = None,
+    event_type: str | None = None,
+    stream: bool = False,
+) -> Any:
+    """Legacy compatibility export: delegated to runs router."""
+    from .routers.runs import list_events as _list_events
+
+    return _list_events(
+        limit=limit,
+        work_item_id=work_item_id,
+        event_type=event_type,
+        stream=stream,
+    )
 
 
 
