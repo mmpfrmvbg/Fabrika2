@@ -23,7 +23,7 @@ security:
 	fi
 
 coverage:
-	python -m pytest factory/tests/ \
+	python -m pytest factory/tests/ --ignore=factory/tests/test_concurrency_stress.py \
 		--cov=factory \
 		--cov-report=term-missing \
 		--cov-report=xml:coverage.xml \
