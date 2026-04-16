@@ -104,7 +104,7 @@ def create_vision(
         from factory.db import init_db  # lazy import
 
         try:
-            tmp = init_db(str(DB_PATH))
+            tmp = init_db(DB_PATH)
             tmp.close()
         except sqlite3.OperationalError as e:
             if "locked" not in str(e).lower():

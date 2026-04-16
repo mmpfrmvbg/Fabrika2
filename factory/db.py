@@ -258,8 +258,8 @@ def _seed_static_data(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def init_db(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    ensure_schema(db_path)
+def init_db(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
+    ensure_schema(Path(db_path))
     conn = get_connection(db_path)
     _seed_static_data(conn)
     return conn

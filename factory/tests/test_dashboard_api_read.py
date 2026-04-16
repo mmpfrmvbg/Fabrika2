@@ -23,11 +23,12 @@ def _start_server() -> tuple[HTTPServer, threading.Thread, str]:
     server = HTTPServer(("127.0.0.1", 0), dashboard_api.DashboardRequestHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    host, port = server.server_address
+    host = str(server.server_address[0])
+    port = int(server.server_address[1])
     return server, thread, f"http://{host}:{port}"
 
 
-def _get_json(url: str) -> tuple[int, dict]:
+def _get_json(url: str) -> tuple[int, dict[str, object]]:
     with urlopen(url) as resp:  # noqa: S310 - local test server
         return resp.status, json.loads(resp.read().decode("utf-8"))
 

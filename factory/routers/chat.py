@@ -18,7 +18,7 @@ async def chat_qwen_create(request: Request) -> dict[str, str]:
     Возвращает chat_id для подключения к SSE потоку.
     """
     import factory.api_server as api_server
-    from factory.db import init_db
+    from factory.db import DB_PATH, init_db
 
     try:
         raw = await request.json()
@@ -35,7 +35,7 @@ async def chat_qwen_create(request: Request) -> dict[str, str]:
     work_item_id = payload.work_item_id
 
     try:
-        tmp = init_db(api_server._db_path())
+        tmp = init_db(DB_PATH)
         tmp.close()
     except sqlite3.OperationalError as e:
         if "locked" not in str(e).lower():
@@ -74,10 +74,10 @@ async def chat_qwen_stream(
 ) -> StreamingResponse:
     """SSE поток для чата с Qwen."""
     import factory.api_server as api_server
-    from factory.db import init_db
+    from factory.db import DB_PATH, init_db
 
     try:
-        tmp = init_db(api_server._db_path())
+        tmp = init_db(DB_PATH)
         tmp.close()
     except sqlite3.OperationalError as e:
         if "locked" not in str(e).lower():

@@ -6,6 +6,7 @@ import threading
 import time
 import traceback
 from datetime import datetime, timezone
+from pathlib import Path
 
 from .composition import wire
 from .config import ORCHESTRATOR_TICK_INTERVAL_SECONDS
@@ -73,7 +74,7 @@ class _OrchestratorThread:
             last_err: Exception | None = None
             for attempt in range(max_retries):
                 try:
-                    factory = wire(_db_path())
+                    factory = wire(Path(_db_path()))
                     conn = factory["conn"]
                     break
                 except sqlite3.OperationalError as e:
@@ -131,7 +132,7 @@ class _OrchestratorThread:
         """
         with self._lock:
             self.ticks_total += 1
-        factory = _factory or wire(_db_path())
+        factory = _factory or wire(Path(_db_path()))
         conn: sqlite3.Connection = factory["conn"]
         orch = factory["orchestrator"]
 

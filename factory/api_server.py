@@ -31,7 +31,8 @@ from .config import (API_HOST, API_PORT, ORCHESTRATOR_TICK_INTERVAL_SECONDS,
 from .db import DB_PATH, _db_path, get_async_connection, get_connection
 from .logging import FactoryLogger
 from .logging_config import configure_logging
-from .middleware import rate_limit_middleware
+from .middleware import (_RATE_LIMIT_STATE, _RATE_LIMITS_PER_MINUTE,
+                         _rate_limit_meta, rate_limit_middleware)
 from .orchestrator_thread import _OrchestratorThread
 
 load_dotenv()
@@ -193,7 +194,7 @@ async def api_health() -> dict[str, Any]:
                 )
             ).fetchone()
             worker_status = {
-                "active": len(worker_rows),
+                "active": len(list(worker_rows)),
                 "workers": [
                     {
                         "queue": row["queue_name"],
