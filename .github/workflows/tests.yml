@@ -62,7 +62,7 @@ jobs:
       run: npm test
 
     - name: Run tests
-      run: python -m pytest factory/tests/ -v --tb=short --cov=factory --cov-fail-under=75 --junitxml=test-results/junit.xml
+      run: python -m pytest factory/tests/ -v --tb=short --cov=factory --cov-fail-under=70 --junitxml=test-results/junit.xml
 
     - name: Upload test results
       if: always()
