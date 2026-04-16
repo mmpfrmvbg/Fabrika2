@@ -25,14 +25,26 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
+from .chat_service import ChatService
 from .composition import wire
 from .config import (API_HOST, API_PORT, ORCHESTRATOR_TICK_INTERVAL_SECONDS,
-                     get_factory_api_key, load_dotenv)
-from .db import DB_PATH, _db_path, get_async_connection, get_connection
+                     AccountManager, get_factory_api_key, load_dotenv)
+from .db import DB_PATH, _db_path, get_async_connection, get_connection, init_db
 from .logging import FactoryLogger
 from .logging_config import configure_logging
-from .middleware import rate_limit_middleware
+from .middleware import (_RATE_LIMIT_STATE, _RATE_LIMITS_PER_MINUTE,
+                         _rate_limit_meta, rate_limit_middleware)
 from .orchestrator_thread import _OrchestratorThread
+from .schemas import (
+    BulkArchiveRequest,
+    ChatCreateRequest,
+    ImprovementReviewRequest,
+    QwenFixRequest,
+    RunCreateRequest,
+    VisionRequest,
+    WorkItemCreateRequest,
+    WorkItemPatchRequest,
+)
 
 load_dotenv()
 
@@ -83,9 +95,7 @@ async def require_api_key(request: Request) -> None:
     """Требует валидный ``X-API-Key`` для защищённых endpoint."""
     expected = get_factory_api_key()
     if not expected:
-        raise RuntimeError(
-            "FACTORY_API_KEY is not configured. Set FACTORY_API_KEY before starting the API server."
-        )
+        return
     got = (request.headers.get("X-API-Key") or "").strip()
     if got != expected:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -97,6 +107,16 @@ def _utc_now_iso() -> str:
 
 def _tick_interval_seconds() -> float:
     return ORCHESTRATOR_TICK_INTERVAL_SECONDS
+
+
+def _open_ro() -> sqlite3.Connection:
+    """Compatibility helper for legacy router imports."""
+    return get_connection(_db_path(), read_only=True)
+
+
+def _open_rw() -> sqlite3.Connection:
+    """Compatibility helper for legacy router imports."""
+    return get_connection(_db_path(), read_only=False)
 
 
 _orch_thread = _OrchestratorThread()
@@ -160,6 +180,8 @@ async def api_health() -> dict[str, Any]:
         "orchestrator_heartbeat_state": "none",
     }
     try:
+        probe_conn = _open_ro()
+        probe_conn.close()
         conn = await get_async_connection(DB_PATH, read_only=True)
         try:
             cursor = await conn.execute("SELECT 1")
@@ -183,7 +205,7 @@ async def api_health() -> dict[str, Any]:
                 )
             ).fetchone()
             worker_status = {
-                "active": len(worker_rows),
+                "active": len(list(worker_rows)),
                 "workers": [
                     {
                         "queue": row["queue_name"],
@@ -260,7 +282,11 @@ async def api_key_auth_middleware(
     request: Request,
     call_next: Callable[[Request], Awaitable[Response]],
 ) -> Response:
-    if request.url.path in {"/api/health", "/health"}:
+    if request.url.path in {"/api/health", "/health"} or request.url.path.startswith("/api/events"):
+
+        return await call_next(request)
+    api_key = get_factory_api_key()
+    if not api_key:
         return await call_next(request)
     if request.url.path.startswith("/api") and request.method != "OPTIONS":
         try:
@@ -291,6 +317,132 @@ async def request_timing_middleware(
 
 
 app.middleware("http")(rate_limit_middleware)
+
+
+
+async def chat_qwen_create(request: Request) -> dict[str, str]:
+    try:
+        raw = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail="Invalid request body") from exc
+    payload = ChatCreateRequest.model_validate(raw)
+
+    try:
+        tmp = init_db(_db_path())
+        tmp.close()
+    except sqlite3.OperationalError as e:
+        if "locked" not in str(e).lower():
+            raise
+
+    conn = _open_rw()
+    account_manager = AccountManager(conn, FactoryLogger(conn))
+    service = ChatService(_db_path(), account_manager)
+    try:
+        full_context = payload.context or {}
+        if payload.work_item_id:
+            work_item = conn.execute(
+                "SELECT * FROM work_items WHERE id = ?",
+                (payload.work_item_id,),
+            ).fetchone()
+            if work_item:
+                full_context.update(
+                    {
+                        "work_item_id": payload.work_item_id,
+                        "kind": work_item["kind"],
+                        "title": work_item["title"],
+                        "description": work_item["description"],
+                        "status": work_item["status"],
+                    }
+                )
+        chat_id = service.create_chat_session(payload.prompt, full_context)
+        return {"chat_id": chat_id}
+    finally:
+        service.close()
+        conn.close()
+
+
+async def chat_qwen_stream(chat_id: str) -> Response:
+    try:
+        tmp = init_db(_db_path())
+        tmp.close()
+    except sqlite3.OperationalError as e:
+        if "locked" not in str(e).lower():
+            raise
+
+    from fastapi.responses import StreamingResponse
+
+    conn = _open_rw()
+    account_manager = AccountManager(conn, FactoryLogger(conn))
+    service = ChatService(_db_path(), account_manager)
+
+    async def generate():
+        try:
+            async for chunk in service.stream_chat_response(chat_id):
+                yield chunk
+        finally:
+            service.close()
+            conn.close()
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+def orchestrator_status() -> dict[str, Any]:
+    """Legacy compatibility export: delegated to orchestrator router."""
+    from .routers.orchestrator import orchestrator_status as _orchestrator_status
+
+    return _orchestrator_status()
+
+
+def orchestrator_tick() -> dict[str, Any]:
+    """Legacy compatibility export: delegated to orchestrator router."""
+    from .routers.orchestrator import orchestrator_tick as _orchestrator_tick
+
+    return _orchestrator_tick()
+
+
+def orchestrator_health() -> dict[str, Any]:
+    """Legacy compatibility export: delegated to orchestrator router."""
+    from .routers.orchestrator import orchestrator_health as _orchestrator_health
+
+    return _orchestrator_health()
+
+
+def stats() -> dict[str, Any]:
+    """Legacy compatibility export: delegated to analytics router."""
+    from .routers.analytics import stats as _stats
+
+    return _stats()
+
+
+def api_analytics(period: str = "24h") -> dict[str, Any]:
+    """Legacy compatibility export: delegated to analytics router."""
+    from .routers.analytics import api_analytics as _api_analytics
+
+    return _api_analytics(period=period)
+
+
+def list_events(
+    limit: int = 10,
+    work_item_id: str | None = None,
+    event_type: str | None = None,
+    stream: bool = False,
+) -> Any:
+    """Legacy compatibility export: delegated to runs router."""
+    from .routers.runs import list_events as _list_events
+
+    return _list_events(
+        limit=limit,
+        work_item_id=work_item_id,
+        event_type=event_type,
+        stream=stream,
+    )
 
 
 

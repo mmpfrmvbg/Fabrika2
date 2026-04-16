@@ -350,11 +350,11 @@ def test_worker_iteration_orphan_path_starts_heartbeat(tmp_path: Path, monkeypat
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    monkeypatch.setattr(
-        worker_module,
-        "_heartbeat_loop",
-        lambda _db_path, wi_id: hb_loops.append(wi_id) or _HB(),
-    )
+    def _fake_heartbeat_loop(_db_path: object, wi_id: str) -> _HB:
+        hb_loops.append(wi_id)
+        return _HB()
+
+    monkeypatch.setattr(worker_module, "_heartbeat_loop", _fake_heartbeat_loop)
     monkeypatch.setattr(worker_module.forge, "run_forge_queued_runs", lambda _orch: None)
     monkeypatch.setattr(worker_module, "drain_atom_downstream", lambda _orch, wi_id: downstream.append(wi_id))
 

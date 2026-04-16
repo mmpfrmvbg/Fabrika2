@@ -48,7 +48,8 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for offline test envi
 
     aiosqlite = _AioSqliteCompat()  # type: ignore[assignment]
 
-from .config import ACCOUNTS, DB_PATH, SQLITE_BUSY_TIMEOUT_MS, SQLITE_TIMEOUT_SECONDS
+from .config import (ACCOUNTS, DB_PATH, SQLITE_BUSY_TIMEOUT_MS,
+                     SQLITE_TIMEOUT_SECONDS, resolve_db_path)
 from .db_migrations import ensure_schema, migrate_schema
 from .models import Role
 from .schema_ddl_aux import (
@@ -65,6 +66,19 @@ _SQLITE_BUSY_TIMEOUT_MS = SQLITE_BUSY_TIMEOUT_MS
 _LOG = logging.getLogger("factory.db")
 
 
+def _runtime_db_path(db_path: Path | str | None = None) -> Path | str:
+    """Resolve runtime DB path, honoring FACTORY_DB_PATH for default DB_PATH usages."""
+    if db_path is None:
+        return resolve_db_path()
+    try:
+        p = Path(db_path)
+    except TypeError:
+        return db_path
+    if p == Path(DB_PATH):
+        return resolve_db_path()
+    return db_path
+
+
 def _db_path_from_conn(conn: sqlite3.Connection) -> Path | None:
     """Путь к файлу БД для `main` (для делегирования ensure_schema из legacy-вызовов)."""
     for _seq, name, path in conn.execute("PRAGMA database_list").fetchall():
@@ -79,7 +93,7 @@ def _connect_sqlite(
     read_only: bool = False,
 ) -> sqlite3.Connection:
     """Единая точка открытия SQLite-соединений с согласованными PRAGMA."""
-    p = Path(db_path).resolve()
+    p = Path(_runtime_db_path(db_path)).resolve()
     if read_only:
         if not p.exists():
             raise FileNotFoundError(str(p))
@@ -144,12 +158,12 @@ def gen_id(prefix: str = "") -> str:
     return f"{prefix}_{short}" if prefix else short
 
 
-def get_connection(db_path: Path | str = DB_PATH, *, read_only: bool = False) -> sqlite3.Connection:
+def get_connection(db_path: Path | str | None = None, *, read_only: bool = False) -> sqlite3.Connection:
     """Лёгкое подключение: только PRAGMA, без DDL (схема — через ensure_schema).
 
     ``read_only=True`` — URI ``?mode=ro`` (для API read-path); ``foreign_keys`` включены для единообразия.
     """
-    conn = _connect_sqlite(db_path, read_only=read_only)
+    conn = _connect_sqlite(_runtime_db_path(db_path), read_only=read_only)
     conn.execute("PRAGMA foreign_keys = ON")
     try:
         conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
@@ -159,12 +173,12 @@ def get_connection(db_path: Path | str = DB_PATH, *, read_only: bool = False) ->
 
 
 async def get_async_connection(
-    db_path: Path | str = DB_PATH,
+    db_path: Path | str | None = None,
     *,
     read_only: bool = False,
 ) -> aiosqlite.Connection:
     """Async SQLite connection for use inside async API handlers."""
-    p = Path(db_path).resolve()
+    p = Path(_runtime_db_path(db_path)).resolve()
     if read_only:
         if not p.exists():
             raise FileNotFoundError(str(p))
@@ -195,12 +209,12 @@ async def get_async_connection(
 
 def _db_path() -> str:
     """Compatibility helper for legacy imports in API server module."""
-    return str(DB_PATH)
+    return str(resolve_db_path())
 
 
 def _open_ro() -> sqlite3.Connection:
     """Compatibility helper returning read-only DB connection."""
-    return get_connection(DB_PATH, read_only=True)
+    return get_connection(read_only=True)
 
 
 @contextmanager
@@ -258,9 +272,10 @@ def _seed_static_data(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def init_db(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    ensure_schema(db_path)
-    conn = get_connection(db_path)
+def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
+    effective_db_path = _runtime_db_path(db_path)
+    ensure_schema(Path(effective_db_path))
+    conn = get_connection(effective_db_path)
     _seed_static_data(conn)
     return conn
 

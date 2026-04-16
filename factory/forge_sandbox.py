@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from .config import FACTORY_WORKSPACE_ROOT
+
 from .db import gen_id
 from .models import EventType, Severity
 
@@ -25,8 +25,10 @@ if TYPE_CHECKING:
 
 
 def workspace_root() -> Path:
-    if FACTORY_WORKSPACE_ROOT:
-        return Path(FACTORY_WORKSPACE_ROOT).resolve()
+    """Resolve workspace root from current environment at call time."""
+    root = (os.environ.get("FACTORY_WORKSPACE_ROOT") or "").strip()
+    if root:
+        return Path(root).resolve()
     return Path.cwd().resolve()
 
 

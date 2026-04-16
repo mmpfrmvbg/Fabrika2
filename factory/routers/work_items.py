@@ -38,9 +38,7 @@ def _valid_id(value: str, field: str) -> str:
 async def _require_api_key(request: Request) -> None:
     expected = get_factory_api_key()
     if not expected:
-        raise RuntimeError(
-            "FACTORY_API_KEY is not configured. Set FACTORY_API_KEY before starting the API server."
-        )
+        return
     got = (request.headers.get("X-API-Key") or "").strip()
     if got != expected:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -82,37 +80,16 @@ def _serialize_export_work_items(conn: sqlite3.Connection) -> list[dict[str, Any
 def _work_items_export_csv(items: list[dict[str, Any]]) -> str:
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(
-        [
-            "id",
-            "kind",
-            "title",
-            "status",
-            "parent_id",
-            "root_id",
-            "planning_depth",
-            "priority",
-            "created_at",
-            "updated_at",
-            "runs_count",
-            "events_count",
-        ]
-    )
+    writer.writerow(["work_item_id", "kind", "status", "title", "runs_json", "events_json"])
     for wi in items:
         writer.writerow(
             [
                 wi.get("id"),
                 wi.get("kind"),
-                wi.get("title"),
                 wi.get("status"),
-                wi.get("parent_id"),
-                wi.get("root_id"),
-                wi.get("planning_depth"),
-                wi.get("priority"),
-                wi.get("created_at"),
-                wi.get("updated_at"),
-                len(wi.get("runs") or []),
-                len(wi.get("events") or []),
+                wi.get("title"),
+                json.dumps(wi.get("runs") or [], ensure_ascii=False),
+                json.dumps(wi.get("events") or [], ensure_ascii=False),
             ]
         )
     return buf.getvalue()
@@ -176,7 +153,7 @@ def post_work_item_cancel(
     _: None = Depends(_require_api_key),
 ) -> dict[str, Any]:
     """FSM creator_cancelled + каскад по поддереву (post-order)."""
-    factory = wire(str(DB_PATH))
+    factory = wire(DB_PATH)
     conn: sqlite3.Connection = factory["conn"]
     sm = factory["sm"]
     logger: FactoryLogger = factory["logger"]
@@ -206,7 +183,7 @@ def post_work_item_archive(
     _: None = Depends(_require_api_key),
 ) -> dict[str, Any]:
     """FSM archive_sweep для done и всех done-потомков."""
-    factory = wire(str(DB_PATH))
+    factory = wire(DB_PATH)
     conn = factory["conn"]
     sm = factory["sm"]
     logger: FactoryLogger = factory["logger"]
@@ -312,7 +289,7 @@ def post_bulk_archive(
     """Архивирует несколько корней (обычно Vision в done)."""
     ids = body.ids
     filt = (body.filter or "").strip()
-    factory = wire(str(DB_PATH))
+    factory = wire(DB_PATH)
     conn = factory["conn"]
     sm = factory["sm"]
     try:
@@ -547,6 +524,13 @@ def create_work_item_legacy(
         conn.close()
 
 
+def get_work_item_legacy(id: str | None = None) -> dict[str, Any]:  # noqa: A002
+    """Legacy /api/work_items?id=... endpoint compatibility."""
+    if not id:
+        raise HTTPException(status_code=404, detail="Not Found")
+    return get_work_item(id)
+
+
 def build_router() -> APIRouter:
     from factory import deps as srv
 
@@ -563,5 +547,6 @@ def build_router() -> APIRouter:
     router.add_api_route("/api/tasks/{wi_id}/forge-run", srv.post_tasks_forge_run_compat, methods=["POST"])
     router.add_api_route("/api/work-items/{wi_id}", srv.get_work_item, methods=["GET"])
     router.add_api_route("/api/tasks/{wi_id}", srv.get_task_bundle, methods=["GET"])
+    router.add_api_route("/api/work_items", srv.get_work_item_legacy, methods=["GET"])
     router.add_api_route("/api/work_items", srv.create_work_item_legacy, methods=["POST"])
     return router

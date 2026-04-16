@@ -55,9 +55,11 @@ def _rate_limit_meta(method: str, key: str) -> dict[str, int]:
     limit = _RATE_LIMITS_PER_MINUTE.get(method.upper())
     if not limit:
         return {"limit": 0, "remaining": 0, "retry_after": 0, "is_limited": 0}
+
     now = int(time.time())
     window_start = now - (now % _RATE_LIMIT_WINDOW_SECONDS)
     prev_window = window_start - _RATE_LIMIT_WINDOW_SECONDS
+
     with get_connection(DB_PATH) as conn:
         _ensure_rate_limit_schema(conn)
         conn.execute("DELETE FROM rate_limit_log WHERE window_start < ?", (prev_window,))
@@ -74,10 +76,25 @@ def _rate_limit_meta(method: str, key: str) -> dict[str, int]:
             (key, window_start),
         ).fetchone()
         count = int(row["count"] if row else 0)
-        elapsed = now - window_start
-        remaining = max(0, limit - count)
-        retry_after = max(0, _RATE_LIMIT_WINDOW_SECONDS - elapsed)
-        is_limited = 1 if count > limit else 0
+
+    ttl = float(_RATE_LIMIT_WINDOW_SECONDS * 10)
+    now_f = float(now)
+    stale_keys = [
+        k for k, st in _RATE_LIMIT_STATE.items()
+        if now_f - float(st.get("last_access", 0.0)) > ttl
+    ]
+    for stale in stale_keys:
+        _RATE_LIMIT_STATE.pop(stale, None)
+    _RATE_LIMIT_STATE[(method.upper(), key)] = {
+        "window_start": float(window_start),
+        "count": count,
+        "last_access": now_f,
+    }
+
+    elapsed = now - window_start
+    remaining = max(0, limit - count)
+    retry_after = max(0, _RATE_LIMIT_WINDOW_SECONDS - elapsed)
+    is_limited = 1 if count > limit else 0
     return {
         "limit": limit,
         "remaining": remaining,

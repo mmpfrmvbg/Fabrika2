@@ -8,15 +8,31 @@
 import asyncio
 import json
 import logging
-import uuid
+import os
+import shutil
+import subprocess
 import time
-from typing import AsyncGenerator, Callable, Optional
+import uuid
 from datetime import datetime, timezone
+from typing import AsyncGenerator, Callable, Optional
 
 from .config import AccountManager
 from .db import get_connection
 from .logging import FactoryLogger
 from .models import EventType, Severity
+
+
+class _CompatEventLoopPolicy(asyncio.DefaultEventLoopPolicy):
+    def get_event_loop(self):
+        try:
+            return super().get_event_loop()
+        except RuntimeError:
+            loop = self.new_event_loop()
+            self.set_event_loop(loop)
+            return loop
+
+
+asyncio.set_event_loop_policy(_CompatEventLoopPolicy())
 
 # Хранилище активных чат-сессий с TTL
 _active_chats: dict[str, dict] = {}
@@ -126,10 +142,7 @@ class ChatService:
         Запустить Qwen CLI в чат-режиме с callback для стриминга.
         Использует прямой subprocess вызов qwen CLI.
         """
-        import subprocess
-        import shutil
-        import os
-        
+
         full_prompt = self._build_chat_prompt(
             session['prompt'],
             session['context']
