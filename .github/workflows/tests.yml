@@ -103,7 +103,7 @@ jobs:
             htmlcov/
 
       - name: Build coverage summary
-        id: coverage_summary
+        continue-on-error: true         id: coverage_summary
         run: |
           python - <<'PY'
           import xml.etree.ElementTree as ET
