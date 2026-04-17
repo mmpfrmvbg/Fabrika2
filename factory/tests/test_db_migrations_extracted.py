@@ -3,6 +3,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from factory import db, db_migrations
 from factory.schema_ddl import DDL
 from factory.schema_ddl_aux import MIGRATIONS_TABLE_DDL
@@ -75,3 +77,23 @@ def test_migrate_schema_available_from_both_modules() -> None:
     assert callable(db.migrate_schema)
     assert callable(db_migrations.migrate_schema)
     assert db.migrate_schema is db_migrations.migrate_schema
+
+
+def test_migrate_schema_delegates_aux_schema_builders(monkeypatch: pytest.MonkeyPatch) -> None:
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(DDL)
+    called: dict[str, int] = {"architect": 0, "judge_review": 0}
+
+    def _architect(conn: sqlite3.Connection) -> None:
+        called["architect"] += 1
+
+    def _judge_review(conn: sqlite3.Connection) -> None:
+        called["judge_review"] += 1
+
+    monkeypatch.setattr(db_migrations, "create_architect_comments_schema", _architect)
+    monkeypatch.setattr(db_migrations, "create_judge_and_review_results_schema", _judge_review)
+    try:
+        db_migrations.migrate_schema(conn)
+        assert called == {"architect": 1, "judge_review": 1}
+    finally:
+        conn.close()

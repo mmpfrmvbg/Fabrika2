@@ -1,5 +1,9 @@
 """Auxiliary SQLite DDL fragments used by db migrations."""
 
+from __future__ import annotations
+
+import sqlite3
+
 MIGRATIONS_TABLE_DDL = """
 CREATE TABLE IF NOT EXISTS migrations (
     version     INTEGER PRIMARY KEY,
@@ -109,3 +113,25 @@ CREATE INDEX IF NOT EXISTS idx_rr_verdict ON review_results(verdict);
 CREATE INDEX IF NOT EXISTS idx_rr_subject ON review_results(subject_run_id);
 CREATE INDEX IF NOT EXISTS idx_rr_created ON review_results(created_at);
 """
+
+
+def create_migrations_table(conn: sqlite3.Connection) -> None:
+    """Create migrations bookkeeping table if it does not exist."""
+    conn.execute(MIGRATIONS_TABLE_DDL)
+
+
+def create_improvement_candidates_table(conn: sqlite3.Connection) -> None:
+    """Create improvement candidates schema objects (table + indexes)."""
+    conn.executescript(IMPROVEMENT_CANDIDATES_DDL)
+
+
+def create_architect_comments_schema(conn: sqlite3.Connection) -> None:
+    """Create architect comments table and supporting indexes."""
+    conn.execute(ARCHITECT_COMMENTS_TABLE_DDL)
+    conn.execute(ARCHITECT_COMMENTS_INDEX_WI_DDL)
+    conn.execute(ARCHITECT_COMMENTS_INDEX_TIME_DDL)
+
+
+def create_judge_and_review_results_schema(conn: sqlite3.Connection) -> None:
+    """Create judge/review result tables and supporting indexes."""
+    conn.executescript(JUDGE_AND_REVIEW_RESULTS_DDL)
