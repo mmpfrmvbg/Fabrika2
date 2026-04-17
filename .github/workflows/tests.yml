@@ -115,7 +115,8 @@ jobs:
           with open('coverage-summary.md', 'w', encoding='utf-8') as f:
             f.write(summary)
           with open(__import__('os').environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
-            out.write('summary<<EOF\\n')
+            out.write(f'summary={summary}
+'<EOF\\n')
             out.write(summary + '\\n')
             out.write('EOF\\n')
           PY
