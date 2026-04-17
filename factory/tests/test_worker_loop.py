@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
+from unittest.mock import Mock, patch
 
 from factory.worker_loop import cleanup_stale_locks, factory_has_pending_dispatch
 
@@ -155,3 +157,83 @@ def test_cleanup_stale_locks_releases_expired_lock_and_resets_related_state() ->
     assert item_row is not None
     assert item_row["status"] == "ready_for_work"
     assert item_row["previous_status"] == "in_progress"
+
+
+def test_run_worker_loop_logs_idle_and_stops_on_keyboard_interrupt() -> None:
+    conn = Mock()
+    orch = Mock()
+    logger = Mock()
+    orch.tick.side_effect = KeyboardInterrupt
+
+    with patch("factory.worker_loop.resolve_db_path", return_value=Path("/tmp/factory.db")), patch(
+        "factory.worker_loop.wire",
+        return_value={"conn": conn, "orchestrator": orch, "logger": logger},
+    ), patch("factory.worker_loop.cleanup_stale_locks", return_value=0), patch(
+        "factory.worker_loop.factory_has_pending_dispatch", return_value=False
+    ), patch(
+        "factory.worker_loop.time.sleep"
+    ):
+        from factory.worker_loop import run_worker_loop
+
+        run_worker_loop()
+
+    assert logger.log.call_count == 2
+    idle_call = logger.log.call_args_list[0]
+    assert idle_call.args[3] == "worker.idle — нет задач в очередях"
+    stopped_call = logger.log.call_args_list[1]
+    assert stopped_call.args[3] == "worker.stopped (Ctrl+C)"
+    assert conn.commit.call_count == 3
+
+
+def test_run_worker_loop_handles_wal_checkpoint_operational_error() -> None:
+    conn = Mock()
+    orch = Mock()
+    logger = Mock()
+    conn.execute.side_effect = sqlite3.OperationalError("busy")
+    orch.tick.side_effect = [None, KeyboardInterrupt]
+
+    with patch.dict("os.environ", {"FACTORY_WORKER_POLL_MS": "60000"}, clear=False), patch(
+        "factory.worker_loop.resolve_db_path", return_value=Path("/tmp/factory.db")
+    ), patch(
+        "factory.worker_loop.wire",
+        return_value={"conn": conn, "orchestrator": orch, "logger": logger},
+    ), patch(
+        "factory.worker_loop.cleanup_stale_locks", return_value=0
+    ), patch(
+        "factory.worker_loop.factory_has_pending_dispatch", return_value=True
+    ), patch(
+        "factory.worker_loop.time.sleep"
+    ):
+        from factory.worker_loop import run_worker_loop
+
+        run_worker_loop()
+
+    conn.execute.assert_called_once_with("PRAGMA wal_checkpoint(TRUNCATE)")
+    assert orch.tick.call_count == 2
+    assert logger.log.call_count == 1
+    assert logger.log.call_args.args[3] == "worker.stopped (Ctrl+C)"
+    assert conn.commit.call_count == 2
+
+
+def test_run_worker_loop_emits_cleanup_event_when_stale_locks_released() -> None:
+    conn = Mock()
+    orch = Mock()
+    logger = Mock()
+    orch.tick.side_effect = KeyboardInterrupt
+
+    with patch("factory.worker_loop.resolve_db_path", return_value=Path("/tmp/factory.db")), patch(
+        "factory.worker_loop.wire",
+        return_value={"conn": conn, "orchestrator": orch, "logger": logger},
+    ), patch("factory.worker_loop.cleanup_stale_locks", return_value=2), patch(
+        "factory.worker_loop.factory_has_pending_dispatch", return_value=True
+    ), patch(
+        "factory.worker_loop.time.sleep"
+    ):
+        from factory.worker_loop import run_worker_loop
+
+        run_worker_loop()
+
+    assert logger.log.call_count == 2
+    assert logger.log.call_args_list[0].args[3] == "auto-cleanup: освобождено 2 блокировок"
+    assert logger.log.call_args_list[1].args[3] == "worker.stopped (Ctrl+C)"
+    assert conn.commit.call_count == 2
