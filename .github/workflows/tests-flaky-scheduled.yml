@@ -1,0 +1,38 @@
+name: Flaky slow tests (scheduled)
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+jobs:
+  test-flaky-report:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run slow-marked tests
+        run: |
+          mkdir -p test-results-flaky
+          python -m pytest factory/tests/ -v --tb=long -m slow \
+            --junitxml=test-results-flaky/junit-flaky.xml || true
+
+      - name: Upload flaky report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-test-report
+          path: test-results-flaky/
