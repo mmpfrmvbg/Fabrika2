@@ -12,12 +12,10 @@ from typing import Generator
 from .config import DB_PATH, SQLITE_BUSY_TIMEOUT_MS, SQLITE_TIMEOUT_SECONDS
 from .schema_ddl import DDL, V_API_USAGE_TODAY_RECREATE
 from .schema_ddl_aux import (
-    ARCHITECT_COMMENTS_INDEX_TIME_DDL,
-    ARCHITECT_COMMENTS_INDEX_WI_DDL,
-    ARCHITECT_COMMENTS_TABLE_DDL,
-    IMPROVEMENT_CANDIDATES_DDL,
-    JUDGE_AND_REVIEW_RESULTS_DDL,
-    MIGRATIONS_TABLE_DDL,
+    create_architect_comments_schema,
+    create_improvement_candidates_table,
+    create_judge_and_review_results_schema,
+    create_migrations_table,
 )
 
 # Последняя миграция: 1=базовый DDL, 2=improvement_candidates, 3=file_changes.intent_override,
@@ -413,7 +411,7 @@ def ensure_schema(db_path: Path = DB_PATH) -> None:
         conn = _connect_sqlite(db_path)
         try:
             conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute(MIGRATIONS_TABLE_DDL)
+            create_migrations_table(conn)
             mv = _max_migration_version(conn)
             if mv < 1:
                 conn.executescript(DDL)
@@ -424,7 +422,7 @@ def ensure_schema(db_path: Path = DB_PATH) -> None:
                 mv = _max_migration_version(conn)
 
             if mv < 2:
-                conn.executescript(IMPROVEMENT_CANDIDATES_DDL)
+                create_improvement_candidates_table(conn)
                 conn.execute(
                     "INSERT OR IGNORE INTO migrations(version, name) VALUES (2, 'improvement_candidates')"
                 )
@@ -527,9 +525,7 @@ def ensure_schema(db_path: Path = DB_PATH) -> None:
 
 def migrate_schema(conn: sqlite3.Connection) -> None:
     """Добавляет колонки к существующей api_accounts и пересоздаёт v_api_usage_today."""
-    conn.execute(ARCHITECT_COMMENTS_TABLE_DDL)
-    conn.execute(ARCHITECT_COMMENTS_INDEX_WI_DDL)
-    conn.execute(ARCHITECT_COMMENTS_INDEX_TIME_DDL)
+    create_architect_comments_schema(conn)
     cols = _api_accounts_column_names(conn)
     alters: list[tuple[str, str]] = [
         ("account_status", "TEXT NOT NULL DEFAULT 'active'"),
@@ -545,7 +541,7 @@ def migrate_schema(conn: sqlite3.Connection) -> None:
         "WHERE provider IN ('anthropic', '') OR provider IS NULL"
     )
     conn.executescript(V_API_USAGE_TODAY_RECREATE)
-    conn.executescript(JUDGE_AND_REVIEW_RESULTS_DDL)
+    create_judge_and_review_results_schema(conn)
 
     conn.executescript(
         """
